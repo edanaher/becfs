@@ -1,7 +1,7 @@
 History
 =======
 
-Originally mentally-forked from BorgBackup to support sub-block updates, which adds complexity for questionable general purpose gain.  Then pulled in some ideas from decade-plus-old thoughts about making Squashfs writable - what if you could mount a borg backup and just write to it, instead of using the tool?  Joining some ideas from Logicblox, which has a fully-functional database backend, that would be safe if blocks are never rewritten, only changed.  So let's have a series of files, searching is a bit slower, but merging them in Fibonacci-heap style keeps things bounded.  But Logicblox also exposed me to B-epsilon trees (there called alpha trees), which do the same thing but in a more graceful way, and naturally provide versioning capabilities (though this seems to get tricky...)
+Originally mentally-forked from BorgBackup to support sub-block updates, which adds complexity for questionable general purpose gain.  Then pulled in some ideas from decade-plus-old thoughts about making Squashfs writable - what if you could mount a borg backup and just write to it, instead of using the tool?  Joining some ideas from Logicblox, which has a fully-functional database backend, that would be safe if blocks are never rewritten, only changed.  So let's have a series of files, searching is a bit slower, but merging them in Fibonacci-heap style keeps things bounded.  But Logicblox also exposed me to B-epsilon trees (there called alpha trees), which do the same thing but in a more graceful way, and naturally provide versioning capabilities (though this seems to get tricky...).  And then I found Betrfs, which uses a B-espilon tree for *performance*; maybe this could actually be fast?
 
 Plus, I want to use this for backups / filesystem, so it needs to be safe.  Let's use Rust, or, even better, prove it correct in Coq or a similar system...
 
@@ -112,6 +112,9 @@ Misc Features
 - Historic snapshots vs. explicit copy snapshots
   - A generational/CoW system gives historical snapshots for free - just look at the CoW before the write.
   - Explicit copy snapshots copy a node, and anything in there is snapshotted.  Nodes that are modified without copies can be modified in place.
+- FUSE-pure-userspace layer?
+  - According to betrfs, FUSE really slows things down.  They moved in-kernel to avoid that, but that limits the runtime dramatically (e.g., probably can't use Haskell/Caml/Coq.
+  - Instead, why not move to userspace?  Add a shim (LD_PRELOAD?) that replaces IO's with IPC directly to the process (pipe/ unix domain socket)?
 
 Notes on the two trees
 ======================
