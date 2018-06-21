@@ -27,10 +27,12 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseOpen = fsOpen,
                          fuseRead = fsRead,
                          fuseWrite = fsWrite,
+                         fuseCreateDevice = fsCreateDevice,
                          fuseSetFileSize = fsSetFileSize,
                          fuseOpenDirectory = fsOpenDir,
                          fuseReadDirectory = fsReadDir,
                          fuseFlush = fsFlush,
+                         fuseRelease = fsRelease,
                          fuseSynchronizeFile = fsSynchronizeFile,
                          fuseGetFileSystemStats = fsGetFileSystemStats,
                          fuseSetFileTimes = fsSetFileTimes,
@@ -136,12 +138,20 @@ fsWrite path () bytes offset = do
   writeToFile path bytes offset
   return $ Right $ CSize $ fromIntegral $ B.length bytes
 
+fsCreateDevice :: FilePath -> EntryType -> FileMode -> DeviceID -> IO Errno
+fsCreateDevice path tp mode id = case tp of
+  RegularFile -> writeToFile path B.empty 0 >> return eOK
+  _ -> return eNOSYS
+
 fsSetFileSize :: FilePath -> FileOffset -> IO Errno
 fsSetFileSize path size = return eOK
 
 
 fsFlush :: FilePath -> () -> IO Errno
 fsFlush path () = return eOK
+
+fsRelease :: FilePath -> () -> IO ()
+fsRelease path () = return ()
 
 fsSynchronizeFile :: FilePath -> SyncType -> IO Errno
 fsSynchronizeFile path synctype = return eOK
