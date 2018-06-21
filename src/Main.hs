@@ -28,6 +28,7 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseRead = fsRead,
                          fuseWrite = fsWrite,
                          fuseCreateDevice = fsCreateDevice,
+                         fuseRemoveLink = fsRemoveLink,
                          fuseSetFileSize = fsSetFileSize,
                          fuseOpenDirectory = fsOpenDir,
                          fuseReadDirectory = fsReadDir,
@@ -46,6 +47,14 @@ fileContents path = do
   allFiles <- readFile "/tmp/filelist"
   line <- return $ head $ filter ((== path) . head . words) $ lines allFiles
   return $ B.pack $ unwords $ tail $ words line
+
+removeFile :: FilePath -> IO ()
+removeFile path = do
+  allFiles <- readFile "/tmp/filelist"
+  otherfiles <- return $ filter ((/= path) . head . words) $ lines allFiles
+  writeFile "/tmp/filelist2" $ unlines $ otherfiles
+  renameFile "/tmp/filelist2" "/tmp/filelist"
+  return ()
 
 writeToFile :: FilePath -> B.ByteString -> FileOffset -> IO ()
 writeToFile path rawContents offset = do
@@ -142,6 +151,10 @@ fsCreateDevice :: FilePath -> EntryType -> FileMode -> DeviceID -> IO Errno
 fsCreateDevice path tp mode id = case tp of
   RegularFile -> writeToFile path B.empty 0 >> return eOK
   _ -> return eNOSYS
+
+fsRemoveLink :: FilePath -> IO Errno
+fsRemoveLink path =
+  removeFile path >> return eOK
 
 fsSetFileSize :: FilePath -> FileOffset -> IO Errno
 fsSetFileSize path size = return eOK
