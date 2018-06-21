@@ -24,9 +24,12 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseGetFileSystemStats = fsGetFileSystemStats
                        }
 
+
 fileContents :: B.ByteString
 fileContents = B.pack "It works!\n"
-filePath = "/testing"
+fsPaths :: IO [FilePath]
+fsPaths = readFile "/tmp/filelist" >>= return . lines
+
 
 dirStat ctx = FileStat { statEntryType = Directory,
                          statFileMode = foldr1 unionFileModes [ ownerReadMode, ownerExecuteMode,
@@ -59,11 +62,13 @@ fileStat ctx = FileStat { statEntryType = RegularFile,
 fsGetFileStat "/" = do
   ctx <- getFuseContext
   return $ Right $ dirStat ctx
-fsGetFileStat path | path == filePath = do
-  ctx <- getFuseContext
-  return $ Right $ fileStat ctx
-fsGetFileStat _ =
-  return $ Left eNOENT
+fsGetFileStat path = do
+  paths <- fsPaths
+  if path `elem` paths then do
+    ctx <- getFuseContext
+    return $ Right $ fileStat ctx
+  else
+    return $ Left eNOENT
 
 fsOpenDir "/" = return eOK
 fsOpenDir _   = return eNOENT
@@ -71,23 +76,29 @@ fsOpenDir _   = return eNOENT
 fsReadDir :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
 fsReadDir "/" = do
   ctx <- getFuseContext
-  return $ Right [(".", dirStat ctx),
-                  ("..", dirStat ctx),
-                  (tail filePath, fileStat ctx)]
+  paths <- fsPaths
+  return $ Right $ [(".", dirStat ctx),
+                    ("..", dirStat ctx)] ++
+                   map (\path -> (tail path, fileStat ctx)) paths
 fsReadDirectory _ = return (Left (eNOENT))
 
 fsOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno ())
-fsOpen path mode flags
-  | path == filePath = case mode of
+fsOpen path mode flags = do
+  paths <- fsPaths
+  if path `elem` paths then
+    case mode of
       ReadOnly -> return $ Right ()
       _ -> return $ Left eACCES
-  | otherwise = return $ Left eNOENT
+  else
+    return $ Left eNOENT
 
 fsRead :: FilePath -> () -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
-fsRead path () byteCount offset
-  | path == filePath =
-     return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) fileContents
-  | otherwise = return $ Left eNOENT
+fsRead path () byteCount offset = do
+  paths <- fsPaths
+  if path `elem` paths then
+    return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) fileContents
+  else
+    return $ Left eNOENT
 
 fsGetFileSystemStats :: String -> IO (Either Errno FileSystemStats)
 fsGetFileSystemStats str =
