@@ -1,7 +1,11 @@
 module Main where
 
 import Control.Exception.Base
+import Data.Binary (Binary)
+import Data.Binary.Get (runGet)
+import Data.Binary.Put (runPut)
 import qualified Data.ByteString.Char8 as B
+import qualified Data.ByteString.Lazy as BL
 import Foreign.C.Error
 import Foreign.C.Types
 import System.Directory (renameFile)
@@ -11,6 +15,13 @@ import System.Posix.Files
 import System.Posix.IO
 
 import System.Fuse
+
+import Tree.ListPoc as Tree
+
+metadatafile = "/tmp/becfs-metadata"
+metadatafile2 = "/tmp/becfs-metadata.new"
+datafile = "/tmp/becfs-data"
+datafile2 = "/tmp/becfs-data.new"
 
 exnHandler :: SomeException -> IO Errno
 exnHandler exc = return eNOENT
@@ -39,45 +50,79 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseGetFileSystemStats = fsGetFileSystemStats,
                          fuseSetFileTimes = fsSetFileTimes,
                          fuseSetFileMode = fsSetFileMode,
-                         fuseAccess = fsAccess
+                         fuseAccess = fsAccess,
+                         fuseInit = fsInit
                        }
 
 
-fileContents :: FilePath -> IO B.ByteString
+updateTree :: Binary a => FilePath -> FilePath -> (Tree a -> Tree a) -> IO ()
+updateTree treeFile bakFile op = do
+  bytes <- BL.readFile treeFile
+  tree <- return $ (runGet Tree.deserialize bytes)
+  tree' <- return $ op tree
+  bytes' <- return $ runPut $ Tree.serialize tree'
+  BL.writeFile bakFile bytes'
+  renameFile bakFile treeFile
+
+fileContents :: FilePath -> IO (Maybe B.ByteString)
 fileContents path = do
-  allFiles <- readFile "/tmp/filelist"
-  line <- return $ head $ filter ((== path) . head . words) $ lines allFiles
-  return $ B.pack $ unwords $ tail $ words line
+  return $ B.pack ""
+  allContents <- BL.readFile datafile
+  contentTree <- return $ runGet Tree.deserialize allContents
+  return $ Tree.lookup contentTree path
+--  line <- return $ head $ filter ((== path) . head . words) $ lines allFiles
+--  return $ B.pack $ unwords $ tail $ words line
 
 removeFile :: FilePath -> IO ()
 removeFile path = do
-  allFiles <- readFile "/tmp/filelist"
-  otherfiles <- return $ filter ((/= path) . head . words) $ lines allFiles
-  writeFile "/tmp/filelist2" $ unlines $ otherfiles
-  renameFile "/tmp/filelist2" "/tmp/filelist"
-  return ()
+  updateTree metadatafile metadatafile2 (\t -> remove t path :: Tree ())
+
+createFileMeta :: FilePath -> IO ()
+createFileMeta path = do
+  allMeta <- BL.readFile metadatafile
+  tree <- return $ (runGet Tree.deserialize allMeta)
+  tree' <- return $ Tree.add tree path ()
+  allMeta' <- return $ runPut $ Tree.serialize tree'
+  BL.writeFile metadatafile2 allMeta'
+  renameFile metadatafile2 metadatafile
+
+ensureFileExists :: FilePath -> IO ()
+ensureFileExists path = do
+  exists <- fileExists path
+  if not exists then
+    createFileMeta path
+  else
+    return ()
 
 writeToFile :: FilePath -> B.ByteString -> FileOffset -> IO ()
-writeToFile path rawContents offset = do
-  contents <- return $ B.intercalate (B.pack "::") $ B.split '\n' rawContents
-  allFiles <- readFile "/tmp/filelist"
-  otherfiles <- return $ filter ((/= path) . head . words) $ lines allFiles
-  writeFile "/tmp/filelist2" $ unlines $ (path ++ " " ++ B.unpack contents):otherfiles
-  renameFile "/tmp/filelist2" "/tmp/filelist"
-  return ()
+writeToFile path contents offset = do
+  ensureFileExists path
+  allFiles <- BL.readFile datafile
+  tree <- return $ runGet Tree.deserialize allFiles
+  tree' <- return $ Tree.update tree path contents
+  allFiles' <- return $ runPut $ Tree.serialize tree'
+  BL.writeFile datafile2 allFiles'
+  renameFile datafile2 datafile
 
 moveFile :: FilePath -> FilePath -> IO ()
 moveFile from to = do
-  allFiles <- readFile "/tmp/filelist"
-  contents <- return $ unwords $ tail $ words $ head $ filter ((== from) . head . words) $ lines allFiles
-  otherfiles <- return $ filter ((/= from) . head . words) $ lines allFiles
-  writeFile "/tmp/filelist2" $ unlines $ (to ++ " " ++ contents):otherfiles
-  renameFile "/tmp/filelist2" "/tmp/filelist"
-  return ()
+  allMeta <- BL.readFile metadatafile
+  tree <- return $ (runGet Tree.deserialize allMeta :: Tree ())
+  tree' <- return $ Tree.add (Tree.remove tree from) to ()
+  allMeta' <- return $ runPut $ Tree.serialize tree'
+  BL.writeFile metadatafile2 allMeta'
+  renameFile metadatafile2 metadatafile
 
+fileExists :: FilePath -> IO Bool
+fileExists path = do
+  files <- fsPaths "/"
+  return $ any (== path) files
 
-fsPaths :: IO [FilePath]
-fsPaths = readFile "/tmp/filelist" >>= return . map (head . words) . lines
+fsPaths :: FilePath -> IO [FilePath]
+fsPaths dir = do
+  allMeta <- BL.readFile metadatafile
+  tree <- return $ (runGet Tree.deserialize allMeta :: Tree ())
+  return $ Tree.keysUnder tree "/"
 
 
 dirStat ctx = FileStat { statEntryType = Directory,
@@ -112,11 +157,13 @@ fsGetFileStat "/" = do
   ctx <- getFuseContext
   return $ Right $ dirStat ctx
 fsGetFileStat path = do
-  paths <- fsPaths
+  paths <- fsPaths "/"
   if path `elem` paths then do
     ctx <- getFuseContext
-    content <- fileContents path
-    return $ Right $ fileStat content ctx
+    content <- fileContents path -- This should read metadata
+    case content of
+      Nothing -> return $ Right $ fileStat (B.empty) ctx
+      Just c -> return $ Right $ fileStat c ctx
   else
     return $ Left eNOENT
 
@@ -126,7 +173,7 @@ fsOpenDir _   = return eNOENT
 fsReadDir :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
 fsReadDir "/" = do
   ctx <- getFuseContext
-  paths <- fsPaths
+  paths <- fsPaths "/"
   return $ Right $ [(".", dirStat ctx),
                     ("..", dirStat ctx)] ++
                    map (\path -> (tail path, fileStat (B.pack "haha") ctx)) paths
@@ -134,7 +181,7 @@ fsReadDirectory _ = return (Left (eNOENT))
 
 fsOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno ())
 fsOpen path mode flags = do
-  paths <- fsPaths
+  paths <- fsPaths "/"
   if path `elem` paths then
     case mode of
       ReadOnly -> return $ Right ()
@@ -145,10 +192,12 @@ fsOpen path mode flags = do
 
 fsRead :: FilePath -> () -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 fsRead path () byteCount offset = do
-  paths <- fsPaths
+  paths <- fsPaths "/"
   contents <- fileContents path
   if path `elem` paths then
-    return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) contents
+    case contents of
+      Nothing -> return $ Left eNOENT
+      Just c -> return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) c
   else
     return $ Left eNOENT
 
@@ -203,3 +252,8 @@ fsSetFileMode path mode = return eOK
 
 fsAccess :: FilePath -> Int -> IO Errno
 fsAccess str uid = return eOK
+
+fsInit :: IO ()
+fsInit = do
+  BL.writeFile metadatafile $ runPut $ Tree.serialize (Tree.empty :: Tree ())
+  BL.writeFile datafile $ runPut $ Tree.serialize (Tree.empty :: Tree B.ByteString)
