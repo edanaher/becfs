@@ -2,7 +2,7 @@ module Main where
 
 import Control.Exception.Base
 import Data.Binary (Binary)
-import Data.Binary.Get (runGet)
+import Data.Binary.Get (runGet, runGetOrFail)
 import Data.Binary.Put (runPut)
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as BL
@@ -16,7 +16,8 @@ import System.Posix.IO
 
 import System.Fuse
 
-import Tree.ListPoc as Tree
+import qualified Tree.ListPoc as Tree
+import Tree.ListPoc as Tree (Tree)
 
 metadatafile = "/tmp/becfs-metadata"
 metadatafile2 = "/tmp/becfs-metadata.new"
@@ -26,12 +27,14 @@ datafile2 = "/tmp/becfs-data.new"
 exnHandler :: SomeException -> IO Errno
 exnHandler exc = return eNOENT
 
+data FileMetadata = FileMetadata { size :: Int, ctime :: Int }
+
 main :: IO ()
 main = fuseMain fsOps exnHandler
 
 writeErr :: String -> IO ()
 writeErr str =
-  writeFile "/tmp/err" (str ++ "\n")
+  appendFile "/tmp/err" (str ++ "\n")
 
 fsOps :: FuseOperations ()
 fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
@@ -55,7 +58,7 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                        }
 
 
-updateTree :: Binary a => FilePath -> FilePath -> (Tree a -> Tree a) -> IO ()
+updateTree :: Show a => Binary a => FilePath -> FilePath -> (Tree a -> Tree a) -> IO ()
 updateTree treeFile bakFile op = do
   bytes <- BL.readFile treeFile
   tree <- return $ (runGet Tree.deserialize bytes)
@@ -66,25 +69,21 @@ updateTree treeFile bakFile op = do
 
 fileContents :: FilePath -> IO (Maybe B.ByteString)
 fileContents path = do
-  return $ B.pack ""
   allContents <- BL.readFile datafile
-  contentTree <- return $ runGet Tree.deserialize allContents
-  return $ Tree.lookup contentTree path
---  line <- return $ head $ filter ((== path) . head . words) $ lines allFiles
---  return $ B.pack $ unwords $ tail $ words line
+  case runGetOrFail Tree.deserialize allContents of
+    Left (_, _, err) -> do
+      writeErr $ "Error reading tree: " ++ err
+      return Nothing
+    Right (_, _, contentTree) -> do
+      return $ Tree.lookup contentTree path
 
 removeFile :: FilePath -> IO ()
 removeFile path = do
-  updateTree metadatafile metadatafile2 (\t -> remove t path :: Tree ())
+  updateTree metadatafile metadatafile2 (\t -> Tree.remove t path :: Tree ())
 
 createFileMeta :: FilePath -> IO ()
 createFileMeta path = do
-  allMeta <- BL.readFile metadatafile
-  tree <- return $ (runGet Tree.deserialize allMeta)
-  tree' <- return $ Tree.add tree path ()
-  allMeta' <- return $ runPut $ Tree.serialize tree'
-  BL.writeFile metadatafile2 allMeta'
-  renameFile metadatafile2 metadatafile
+  updateTree metadatafile metadatafile2 (\t -> Tree.add t path ())
 
 ensureFileExists :: FilePath -> IO ()
 ensureFileExists path = do
@@ -97,21 +96,17 @@ ensureFileExists path = do
 writeToFile :: FilePath -> B.ByteString -> FileOffset -> IO ()
 writeToFile path contents offset = do
   ensureFileExists path
-  allFiles <- BL.readFile datafile
-  tree <- return $ runGet Tree.deserialize allFiles
-  tree' <- return $ Tree.update tree path contents
-  allFiles' <- return $ runPut $ Tree.serialize tree'
-  BL.writeFile datafile2 allFiles'
-  renameFile datafile2 datafile
+  updateTree datafile datafile2 (\t -> Tree.update t path contents)
 
 moveFile :: FilePath -> FilePath -> IO ()
 moveFile from to = do
-  allMeta <- BL.readFile metadatafile
-  tree <- return $ (runGet Tree.deserialize allMeta :: Tree ())
-  tree' <- return $ Tree.add (Tree.remove tree from) to ()
-  allMeta' <- return $ runPut $ Tree.serialize tree'
-  BL.writeFile metadatafile2 allMeta'
-  renameFile metadatafile2 metadatafile
+  updateTree metadatafile metadatafile2 (\t -> Tree.add (Tree.remove t from) to ())
+  updateTree datafile datafile2 (\t ->
+      let contents = case Tree.lookup t from of
+            Just b -> b
+            Nothing -> B.pack "Lost contents!"
+      in
+      Tree.add (Tree.remove t from) to contents)
 
 fileExists :: FilePath -> IO Bool
 fileExists path = do
