@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Main where
 
 import Control.Exception.Base
@@ -6,8 +8,10 @@ import Data.Binary.Get (runGet, runGetOrFail)
 import Data.Binary.Put (runPut)
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as BL
+import Data.Time.Clock.POSIX (getPOSIXTime)
 import Foreign.C.Error
 import Foreign.C.Types
+import GHC.Generics (Generic)
 import System.Directory (renameFile)
 import System.IO
 import System.Posix.Types
@@ -27,7 +31,23 @@ datafile2 = "/tmp/becfs-data.new"
 exnHandler :: SomeException -> IO Errno
 exnHandler exc = return eNOENT
 
-data FileMetadata = FileMetadata { size :: Int, ctime :: Int }
+data Metadata =
+    FileMetadata { filesize :: Int, mtime :: Int }
+  | DirMetadata { mtime :: Int }
+  deriving (Eq, Show, Generic)
+instance Binary Metadata
+
+getNow :: IO Int
+getNow = round <$> getPOSIXTime
+
+
+emptyFileMetadata :: IO Metadata
+emptyFileMetadata = do
+  now <- getNow
+  return $ FileMetadata { filesize = 0, mtime = now }
+
+zeroFileMetadata :: Metadata
+zeroFileMetadata = FileMetadata { filesize = 0, mtime = 0 }
 
 main :: IO ()
 main = fuseMain fsOps exnHandler
@@ -79,11 +99,12 @@ fileContents path = do
 
 removeFile :: FilePath -> IO ()
 removeFile path = do
-  updateTree metadatafile metadatafile2 (\t -> Tree.remove t path :: Tree ())
+  updateTree metadatafile metadatafile2 (\t -> Tree.remove t path :: Tree Metadata)
 
 createFileMeta :: FilePath -> IO ()
-createFileMeta path = do
-  updateTree metadatafile metadatafile2 (\t -> Tree.add t path ())
+createFileMeta path =  do
+  metadata <- emptyFileMetadata
+  updateTree metadatafile metadatafile2 $ \t -> Tree.add t path metadata
 
 ensureFileExists :: FilePath -> IO ()
 ensureFileExists path = do
@@ -96,11 +117,22 @@ ensureFileExists path = do
 writeToFile :: FilePath -> B.ByteString -> FileOffset -> IO ()
 writeToFile path contents offset = do
   ensureFileExists path
+  updateTree metadatafile metadatafile2 (\t ->
+    let metadata = case Tree.lookup t path of
+          Just m -> m
+          Nothing -> zeroFileMetadata
+    in
+    Tree.update t path $ metadata { filesize = B.length contents })
   updateTree datafile datafile2 (\t -> Tree.update t path contents)
 
 moveFile :: FilePath -> FilePath -> IO ()
 moveFile from to = do
-  updateTree metadatafile metadatafile2 (\t -> Tree.add (Tree.remove t from) to ())
+  updateTree metadatafile metadatafile2 (\t ->
+      let metadata = case Tree.lookup t from of
+            Just m -> m
+            Nothing -> zeroFileMetadata
+      in
+      Tree.add (Tree.remove t from) to metadata)
   updateTree datafile datafile2 (\t ->
       let contents = case Tree.lookup t from of
             Just b -> b
@@ -116,7 +148,7 @@ fileExists path = do
 fsPaths :: FilePath -> IO [FilePath]
 fsPaths dir = do
   allMeta <- BL.readFile metadatafile
-  tree <- return $ (runGet Tree.deserialize allMeta :: Tree ())
+  tree <- return $ (runGet Tree.deserialize allMeta :: Tree Metadata)
   return $ Tree.keysUnder tree "/"
 
 
@@ -135,32 +167,31 @@ dirStat ctx = FileStat { statEntryType = Directory,
                          statStatusChangeTime = 0
                        }
 
-fileStat content ctx = FileStat { statEntryType = RegularFile,
-                                  statFileMode = foldr1 unionFileModes [ ownerReadMode, ownerWriteMode, groupReadMode, otherReadMode],
-                                  statLinkCount = 1,
-                                  statFileOwner = fuseCtxUserID ctx,
-                                  statFileGroup = fuseCtxGroupID ctx,
-                                  statSpecialDeviceID = 0,
-                                  statFileSize = fromIntegral $ B.length $ content,
-                                  statBlocks = 1,
-                                  statAccessTime = 0,
-                                  statModificationTime = 0,
-                                  statStatusChangeTime = 0
-                                }
+fileStat metadata ctx = FileStat {
+    statEntryType = RegularFile,
+    statFileMode = foldr1 unionFileModes [ ownerReadMode, ownerWriteMode, groupReadMode, otherReadMode],
+    statLinkCount = 1,
+    statFileOwner = fuseCtxUserID ctx,
+    statFileGroup = fuseCtxGroupID ctx,
+    statSpecialDeviceID = 0,
+    statFileSize = fromIntegral $ filesize metadata,
+    statBlocks = 1,
+    statAccessTime = 0,
+    statModificationTime = fromIntegral $ mtime metadata,
+    statStatusChangeTime = 0
+  }
 
 fsGetFileStat "/" = do
   ctx <- getFuseContext
   return $ Right $ dirStat ctx
 fsGetFileStat path = do
-  paths <- fsPaths "/"
-  if path `elem` paths then do
-    ctx <- getFuseContext
-    content <- fileContents path -- This should read metadata
-    case content of
-      Nothing -> return $ Right $ fileStat (B.empty) ctx
-      Just c -> return $ Right $ fileStat c ctx
-  else
-    return $ Left eNOENT
+  allMeta <- BL.readFile metadatafile
+  tree <- return $ (runGet Tree.deserialize allMeta :: Tree Metadata)
+  case Tree.lookup tree path of
+    Just metadata -> do
+      ctx <- getFuseContext
+      return $ Right $ fileStat metadata ctx
+    Nothing -> return $ Left eNOENT
 
 fsOpenDir "/" = return eOK
 fsOpenDir _   = return eNOENT
@@ -171,7 +202,7 @@ fsReadDir "/" = do
   paths <- fsPaths "/"
   return $ Right $ [(".", dirStat ctx),
                     ("..", dirStat ctx)] ++
-                   map (\path -> (tail path, fileStat (B.pack "haha") ctx)) paths
+                   map (\path -> (tail path, fileStat zeroFileMetadata ctx)) paths
 fsReadDirectory _ = return (Left (eNOENT))
 
 fsOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno ())
@@ -250,5 +281,5 @@ fsAccess str uid = return eOK
 
 fsInit :: IO ()
 fsInit = do
-  BL.writeFile metadatafile $ runPut $ Tree.serialize (Tree.empty :: Tree ())
+  BL.writeFile metadatafile $ runPut $ Tree.serialize (Tree.empty :: Tree Metadata)
   BL.writeFile datafile $ runPut $ Tree.serialize (Tree.empty :: Tree B.ByteString)

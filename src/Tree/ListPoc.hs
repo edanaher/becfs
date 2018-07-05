@@ -22,7 +22,7 @@ add :: Tree t -> String -> t -> Tree t
 add t k v = (k, v):t
 
 update :: Tree t -> String -> t -> Tree t
-update = add
+update t k v = add (remove t k) k v
 
 remove :: Tree t -> String -> Tree t
 remove t k = filter (\(k', _) -> k /= k') t
