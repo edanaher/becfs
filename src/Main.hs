@@ -2,6 +2,7 @@
 
 module Main where
 
+import Control.Concurrent.MVar
 import Control.Exception.Base
 import Data.Binary (Binary)
 import Data.Binary.Get (runGet, runGetOrFail)
@@ -14,6 +15,7 @@ import Foreign.C.Types
 import GHC.Generics (Generic)
 import System.Directory (renameFile)
 import System.IO
+import System.IO.Unsafe (unsafePerformIO)
 import System.Posix.Types
 import System.Posix.Files
 import System.Posix.IO
@@ -27,6 +29,13 @@ metadatafile = "/tmp/becfs-metadata"
 metadatafile2 = "/tmp/becfs-metadata.new"
 datafile = "/tmp/becfs-data"
 datafile2 = "/tmp/becfs-data.new"
+
+{-# NOINLINE lock #-}
+lock :: MVar unit
+lock = unsafePerformIO newEmptyMVar
+
+takeLock = putMVar lock ()
+releaseLock = takeMVar lock
 
 exnHandler :: SomeException -> IO Errno
 exnHandler exc = do
@@ -88,22 +97,32 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
 
 updateTree :: Show a => Binary a => FilePath -> FilePath -> (Tree a -> Tree a) -> IO ()
 updateTree treeFile bakFile op = do
+  takeLock
   bytes <- BL.fromStrict <$> B.readFile treeFile
   tree <- return $ (runGet Tree.deserialize bytes)
   tree' <- return $ op tree
   bytes' <- return $ runPut $ Tree.serialize tree'
   BL.writeFile bakFile bytes'
   renameFile bakFile treeFile
+  releaseLock
+
+getTree :: Show a => Binary a => FilePath -> IO (Tree a)
+getTree treeFile = do
+  takeLock
+  bytes <- BL.fromStrict <$> B.readFile treeFile
+  case runGetOrFail Tree.deserialize bytes of
+    Left (_, _, err) -> do
+      writeErr $ "Error reading tree: " ++ err
+      releaseLock
+      return Tree.empty
+    Right (_, _, tree) -> do
+      releaseLock
+      return tree
 
 fileContents :: FilePath -> IO (Maybe B.ByteString)
 fileContents path = do
-  allContents <- BL.fromStrict <$> B.readFile datafile
-  case runGetOrFail Tree.deserialize allContents of
-    Left (_, _, err) -> do
-      writeErr $ "Error reading tree: " ++ err
-      return Nothing
-    Right (_, _, contentTree) -> do
-      return $ Tree.lookup contentTree path
+  tree <- getTree datafile
+  return $ Tree.lookup tree path
 
 removeFile :: FilePath -> IO ()
 removeFile path = do
@@ -155,8 +174,7 @@ fileExists path = do
 
 fsPaths :: FilePath -> IO [FilePath]
 fsPaths dir = do
-  allMeta <- BL.fromStrict <$> B.readFile metadatafile
-  tree <- return $ (runGet Tree.deserialize allMeta :: Tree Metadata)
+  tree <- (getTree metadatafile :: IO (Tree Metadata))
   return $ Tree.keysUnder tree "/"
 
 
@@ -197,8 +215,7 @@ fsGetFileStat "/" = do
   return $ Right $ dirStat metadata ctx
 fsGetFileStat path = do
   writeErr $ "Statting " ++ show path
-  allMeta <- BL.fromStrict <$> B.readFile metadatafile
-  tree <- return $ (runGet Tree.deserialize allMeta :: Tree Metadata)
+  tree <- getTree metadatafile
   writeErr $ "  statting " ++ show path ++ ": loaded tree"
   case Tree.lookup tree path of
     Just metadata -> do
@@ -215,8 +232,7 @@ fsReadDir :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
 fsReadDir dir = do
   ctx <- getFuseContext
   metadata <- emptyDirMetadata
-  allMeta <- BL.fromStrict <$> B.readFile metadatafile
-  tree <- return $ (runGet Tree.deserialize allMeta :: Tree Metadata)
+  tree <- getTree metadatafile
   writeErr $ "Reading dir " ++ show dir ++ " => " ++ show (Tree.children tree dir)
   val <- return $ Right $ [(".", dirStat metadata ctx),
                     ("..", dirStat metadata ctx)] ++

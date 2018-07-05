@@ -9,8 +9,6 @@ import qualified Data.Binary.Get
 import qualified Data.Binary.Put
 import Debug.Trace (trace)
 
-import System.IO.Unsafe (unsafePerformIO)
-
 writeErr :: String -> IO ()
 writeErr str =
   appendFile "/tmp/err" (str ++ "\n")
