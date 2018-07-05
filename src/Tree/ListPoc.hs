@@ -2,7 +2,8 @@ module Tree.ListPoc
 where
 
 import Data.Binary
-import Data.List (find)
+import Data.List (find, isPrefixOf, stripPrefix, last)
+import Data.Maybe (fromJust, isJust)
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.Binary.Get
 import qualified Data.Binary.Put
@@ -29,6 +30,14 @@ remove t k = filter (\(k', _) -> k /= k') t
 
 lookup :: Tree t -> String -> Maybe t
 lookup t k = snd <$> find (\(k', _) -> k == k') t
+
+children :: Tree t -> String -> [String]
+children t prefix =
+  let prefixSlash = case last prefix of
+        '/' -> prefix
+        _ -> prefix ++ "/"
+  in
+  filter (all (/= '/')) $ map fromJust $ filter isJust $ map (stripPrefix $ prefixSlash) $ map fst t
 
 keysUnder :: Tree t -> String -> [String]
 keysUnder t prefix = map fst t

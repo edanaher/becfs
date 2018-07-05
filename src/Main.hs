@@ -29,7 +29,9 @@ datafile = "/tmp/becfs-data"
 datafile2 = "/tmp/becfs-data.new"
 
 exnHandler :: SomeException -> IO Errno
-exnHandler exc = return eNOENT
+exnHandler exc = do
+  writeErr $ "Exception: " ++ show exc
+  return eNOENT
 
 data Metadata =
     FileMetadata { filesize :: Int, mtime :: Int }
@@ -49,6 +51,11 @@ emptyFileMetadata = do
 zeroFileMetadata :: Metadata
 zeroFileMetadata = FileMetadata { filesize = 0, mtime = 0 }
 
+emptyDirMetadata :: IO Metadata
+emptyDirMetadata = do
+  now <- getNow
+  return $ DirMetadata { mtime = now }
+
 main :: IO ()
 main = fuseMain fsOps exnHandler
 
@@ -62,6 +69,7 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseRead = fsRead,
                          fuseWrite = fsWrite,
                          fuseCreateDevice = fsCreateDevice,
+                         fuseCreateDirectory = fsCreateDirectory,
                          fuseRemoveLink = fsRemoveLink,
                          fuseRename = fsRename,
                          fuseSetFileSize = fsSetFileSize,
@@ -80,7 +88,7 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
 
 updateTree :: Show a => Binary a => FilePath -> FilePath -> (Tree a -> Tree a) -> IO ()
 updateTree treeFile bakFile op = do
-  bytes <- BL.readFile treeFile
+  bytes <- BL.fromStrict <$> B.readFile treeFile
   tree <- return $ (runGet Tree.deserialize bytes)
   tree' <- return $ op tree
   bytes' <- return $ runPut $ Tree.serialize tree'
@@ -89,7 +97,7 @@ updateTree treeFile bakFile op = do
 
 fileContents :: FilePath -> IO (Maybe B.ByteString)
 fileContents path = do
-  allContents <- BL.readFile datafile
+  allContents <- BL.fromStrict <$> B.readFile datafile
   case runGetOrFail Tree.deserialize allContents of
     Left (_, _, err) -> do
       writeErr $ "Error reading tree: " ++ err
@@ -147,25 +155,26 @@ fileExists path = do
 
 fsPaths :: FilePath -> IO [FilePath]
 fsPaths dir = do
-  allMeta <- BL.readFile metadatafile
+  allMeta <- BL.fromStrict <$> B.readFile metadatafile
   tree <- return $ (runGet Tree.deserialize allMeta :: Tree Metadata)
   return $ Tree.keysUnder tree "/"
 
 
-dirStat ctx = FileStat { statEntryType = Directory,
-                         statFileMode = foldr1 unionFileModes [ ownerReadMode, ownerExecuteMode,
-                                                                groupReadMode, groupExecuteMode,
-                                                                otherReadMode, otherExecuteMode ],
-                         statLinkCount = 2,
-                         statFileOwner = fuseCtxUserID ctx,
-                         statFileGroup = fuseCtxGroupID ctx,
-                         statSpecialDeviceID = 0,
-                         statFileSize = 4096,
-                         statBlocks = 1,
-                         statAccessTime = 0,
-                         statModificationTime = 0,
-                         statStatusChangeTime = 0
-                       }
+dirStat metadata ctx = FileStat {
+    statEntryType = Directory,
+    statFileMode = foldr1 unionFileModes [ ownerReadMode, ownerExecuteMode,
+    groupReadMode, groupExecuteMode,
+    otherReadMode, otherExecuteMode ],
+    statLinkCount = 2,
+    statFileOwner = fuseCtxUserID ctx,
+    statFileGroup = fuseCtxGroupID ctx,
+    statSpecialDeviceID = 0,
+    statFileSize = 4096,
+    statBlocks = 1,
+    statAccessTime = 0,
+    statModificationTime = fromIntegral $ mtime metadata,
+    statStatusChangeTime = 0
+  }
 
 fileStat metadata ctx = FileStat {
     statEntryType = RegularFile,
@@ -182,42 +191,61 @@ fileStat metadata ctx = FileStat {
   }
 
 fsGetFileStat "/" = do
+  writeErr $ "Statting /"
   ctx <- getFuseContext
-  return $ Right $ dirStat ctx
+  metadata <- emptyDirMetadata
+  return $ Right $ dirStat metadata ctx
 fsGetFileStat path = do
-  allMeta <- BL.readFile metadatafile
+  writeErr $ "Statting " ++ show path
+  allMeta <- BL.fromStrict <$> B.readFile metadatafile
   tree <- return $ (runGet Tree.deserialize allMeta :: Tree Metadata)
+  writeErr $ "  statting " ++ show path ++ ": loaded tree"
   case Tree.lookup tree path of
     Just metadata -> do
+      writeErr $ "  statting " ++ show path ++ " => " ++ show metadata
       ctx <- getFuseContext
-      return $ Right $ fileStat metadata ctx
+      case metadata of
+        FileMetadata{} -> return $ Right $ fileStat metadata ctx
+        DirMetadata{} -> return $ Right $ dirStat metadata ctx
     Nothing -> return $ Left eNOENT
 
-fsOpenDir "/" = return eOK
-fsOpenDir _   = return eNOENT
+fsOpenDir _ = return eOK
 
 fsReadDir :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
-fsReadDir "/" = do
+fsReadDir dir = do
   ctx <- getFuseContext
-  paths <- fsPaths "/"
-  return $ Right $ [(".", dirStat ctx),
-                    ("..", dirStat ctx)] ++
-                   map (\path -> (tail path, fileStat zeroFileMetadata ctx)) paths
-fsReadDirectory _ = return (Left (eNOENT))
+  metadata <- emptyDirMetadata
+  allMeta <- BL.fromStrict <$> B.readFile metadatafile
+  tree <- return $ (runGet Tree.deserialize allMeta :: Tree Metadata)
+  writeErr $ "Reading dir " ++ show dir ++ " => " ++ show (Tree.children tree dir)
+  val <- return $ Right $ [(".", dirStat metadata ctx),
+                    ("..", dirStat metadata ctx)] ++
+                   map (\path -> case Tree.lookup tree (dir ++ path) of
+                       Nothing -> (path, fileStat zeroFileMetadata ctx)
+                       Just md -> case md of
+                         FileMetadata{} -> (path, fileStat md ctx)
+                         DirMetadata{} -> (path, dirStat md ctx)
+                       ) (Tree.children tree dir)
+  writeErr $ "  read dir " ++ show dir ++ " => " ++ (case val of Right dirs -> show dirs; Left _ -> "ERROR")
+  return val
 
 fsOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno ())
 fsOpen path mode flags = do
+  writeErr $ "Opening path " ++ show path
   paths <- fsPaths "/"
-  if path `elem` paths then
+  if path `elem` paths then do
+    writeErr $ "Opening path " ++ show path ++ " in " ++ show paths
     case mode of
       ReadOnly -> return $ Right ()
       WriteOnly -> return $ Right ()
       _ -> return $ Left eACCES
-  else
+  else do
+    writeErr $ "Failed to open path " ++ show path ++ " in " ++ show paths
     return $ Right ()
 
 fsRead :: FilePath -> () -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 fsRead path () byteCount offset = do
+  writeErr $ "Reading path " ++ show path
   paths <- fsPaths "/"
   contents <- fileContents path
   if path `elem` paths then
@@ -229,24 +257,39 @@ fsRead path () byteCount offset = do
 
 fsWrite :: FilePath -> () -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
 fsWrite path () bytes offset = do
+  writeErr $ "Writing path " ++ show path
   writeToFile path bytes offset
   return $ Right $ CSize $ fromIntegral $ B.length bytes
 
 fsCreateDevice :: FilePath -> EntryType -> FileMode -> DeviceID -> IO Errno
 fsCreateDevice path tp mode id = case tp of
-  RegularFile -> writeToFile path B.empty 0 >> return eOK
+  RegularFile -> do
+    writeErr $ "Creating file " ++ show path
+    writeToFile path B.empty 0
+    return eOK
   _ -> return eNOSYS
 
+fsCreateDirectory :: FilePath -> FileMode -> IO Errno
+fsCreateDirectory path mode =  do
+  writeErr $ "Creating directory " ++ show path
+  metadata <- emptyDirMetadata
+  updateTree metadatafile metadatafile2 (\t -> Tree.add t path metadata)
+  return eOK
+
 fsRemoveLink :: FilePath -> IO Errno
-fsRemoveLink path =
+fsRemoveLink path = do
+  writeErr $ "Unlinking " ++ show path
   removeFile path >> return eOK
 
 fsRename :: FilePath -> FilePath -> IO Errno
-fsRename from to =
+fsRename from to = do
+  writeErr $ "Renaming " ++ show from ++ " => " ++ show to
   moveFile from to >> return eOK
 
 fsSetFileSize :: FilePath -> FileOffset -> IO Errno
-fsSetFileSize path size = return eOK
+fsSetFileSize path size = do
+  writeErr $ "Resizing " ++ show path ++ " => " ++ show size
+  return eOK
 
 
 fsFlush :: FilePath -> () -> IO Errno
