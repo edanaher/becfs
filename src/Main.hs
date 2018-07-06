@@ -51,6 +51,13 @@ instance Binary Metadata
 getNow :: IO Int
 getNow = round <$> getPOSIXTime
 
+appendPath :: [FilePath] -> FilePath
+appendPath [] = ""
+appendPath [t] = t
+appendPath (h:r) =
+  if last h == '/'
+  then h ++ appendPath r
+  else h ++ "/" ++ appendPath r
 
 emptyFileMetadata :: IO Metadata
 emptyFileMetadata = do
@@ -242,7 +249,7 @@ fsReadDir dir = do
   writeErr $ "Reading dir " ++ show dir ++ " => " ++ show (Tree.children tree dir)
   val <- return $ Right $ [(".", dirStat metadata ctx),
                     ("..", dirStat metadata ctx)] ++
-                   map (\path -> case Tree.lookup tree (dir ++ path) of
+                   map (\path -> case Tree.lookup tree (appendPath [dir, path]) of
                        Nothing -> (path, fileStat zeroFileMetadata ctx)
                        Just md -> case md of
                          FileMetadata{} -> (path, fileStat md ctx)
