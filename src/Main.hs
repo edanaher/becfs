@@ -68,9 +68,15 @@ emptyDirMetadata = do
 main :: IO ()
 main = fuseMain fsOps exnHandler
 
+{-# NOINLINE errlock #-}
+errlock :: MVar unit
+errlock = unsafePerformIO newEmptyMVar
+
 writeErr :: String -> IO ()
-writeErr str =
+writeErr str = do
+  putMVar errlock ()
   appendFile "/tmp/err" (str ++ "\n")
+  takeMVar errlock
 
 fsOps :: FuseOperations ()
 fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
