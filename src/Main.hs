@@ -295,12 +295,14 @@ fsCreateDirectory path mode =  do
 fsRemoveLink :: FilePath -> IO Errno
 fsRemoveLink path = do
   writeErr $ "Unlinking " ++ show path
-  removeFile path >> return eOK
+  removeFile path
+  return eOK
 
 fsRename :: FilePath -> FilePath -> IO Errno
 fsRename from to = do
   writeErr $ "Renaming " ++ show from ++ " => " ++ show to
-  moveFile from to >> return eOK
+  moveFile from to
+  return eOK
 
 fsSetFileSize :: FilePath -> FileOffset -> IO Errno
 fsSetFileSize path size = do

@@ -27,6 +27,7 @@ cabal-version:       >=1.10
 
 executable becfs
   main-is:             Main.hs
+  ghc-options: -threaded
   -- other-modules:       
   -- other-extensions:    
   build-depends:       base == 4.*, HFuse, unix, bytestring, directory, binary, time
