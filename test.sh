@@ -11,3 +11,4 @@ touch dir1/dir2.1/file2.1a
 touch dir1/dir2.1/file2.1b
 touch dir1/file1a
 touch dir1/dir2/dir3/file3a
+ln -s hi bye

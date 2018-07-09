@@ -56,6 +56,7 @@ instance Binary CGid
 data Metadata =
     FileMetadata { filesize :: Int, perms :: FileMode, owner :: UserID, group :: GroupID, mtime :: Int }
   | DirMetadata { mtime :: Int }
+  | SymlinkMetadata { mtime :: Int, target :: FilePath }
   deriving (Eq, Show, Generic)
 instance Binary Metadata
 
@@ -107,6 +108,8 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseWrite = fsWrite,
                          fuseCreateDevice = fsCreateDevice,
                          fuseCreateDirectory = fsCreateDirectory,
+                         fuseCreateSymbolicLink = fsCreateSymlink,
+                         fuseReadSymbolicLink = fsReadSymlink,
                          fuseRemoveLink = fsRemoveLink,
                          fuseRename = fsRename,
                          fuseSetFileSize = fsSetFileSize,
@@ -214,6 +217,14 @@ moveFile from to = do
       in
       Tree.add (Tree.remove t from) to contents)
 
+createSymlink :: FilePath -> FilePath -> IO Errno
+createSymlink from to = do
+  -- TODO: Error checking
+  now <- getNow
+  updateTree metadatafile metadatafile2 (\t ->
+    Tree.add t from $ SymlinkMetadata { target = to, mtime = now })
+  return eOK
+
 setPerms :: FilePath -> FileMode -> IO Errno
 setPerms path perms = do
   res <- updateTreeRet metadatafile metadatafile2 (\t ->
@@ -282,6 +293,22 @@ fileStat metadata ctx = FileStat {
     statStatusChangeTime = 0
   }
 
+symlinkStat metadata ctx = FileStat {
+    statEntryType = SymbolicLink,
+    statFileMode = foldr1 unionFileModes [ ownerReadMode, ownerExecuteMode,
+                                           groupReadMode, groupExecuteMode,
+                                           otherReadMode, otherExecuteMode ],
+    statLinkCount = 1,
+    statFileOwner = fuseCtxUserID ctx,
+    statFileGroup = fuseCtxGroupID ctx,
+    statSpecialDeviceID = 0,
+    statFileSize = 4096,
+    statBlocks = 1,
+    statAccessTime = 0,
+    statModificationTime = fromIntegral $ mtime metadata,
+    statStatusChangeTime = 0
+  }
+
 fsGetFileStat "/" = do
   writeErr $ "Statting /"
   ctx <- getFuseContext
@@ -298,6 +325,7 @@ fsGetFileStat path = do
       case metadata of
         FileMetadata{} -> return $ Right $ fileStat metadata ctx
         DirMetadata{} -> return $ Right $ dirStat metadata ctx
+        SymlinkMetadata{} -> return $ Right $ symlinkStat metadata ctx
     Nothing -> return $ Left eNOENT
 
 fsOpenDir _ = return eOK
@@ -316,6 +344,7 @@ fsReadDir dir = do
                        Just md -> case md of
                          FileMetadata{} -> (path, fileStat md ctx)
                          DirMetadata{} -> (path, dirStat md ctx)
+                         SymlinkMetadata{} -> (path, symlinkStat md ctx)
                        ) (Tree.children tree dir)
   writeErr $ "  read dir " ++ show dir ++ " => " ++ (case val of Right dirs -> show dirs; Left _ -> "ERROR")
   return val
@@ -366,6 +395,18 @@ fsCreateDirectory path mode =  do
   metadata <- emptyDirMetadata
   updateTree metadatafile metadatafile2 (\t -> Tree.add t path metadata)
   return eOK
+
+fsCreateSymlink :: FilePath -> FilePath -> IO Errno
+fsCreateSymlink to from =  do
+  writeErr $ "Creating symlink " ++ show from ++ " => " ++ show to
+  createSymlink from to
+
+fsReadSymlink :: FilePath -> IO (Either Errno FilePath)
+fsReadSymlink path =  do
+  tree <- getTree metadatafile
+  case Tree.lookup tree path of
+    Just (SymlinkMetadata {target = t}) -> return $ Right t
+    _ -> return $ Left eNOENT
 
 fsRemoveLink :: FilePath -> IO Errno
 fsRemoveLink path = do
