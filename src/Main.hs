@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveGeneric, StandaloneDeriving #-}
 
 module Main where
 
@@ -43,8 +43,18 @@ exnHandler exc = do
   writeErr $ "Exception: " ++ show exc
   return eNOENT
 
+--instance Binary CMode where
+--  put (CMode x) = put x
+--  get = CMode .get
+deriving instance Generic CMode
+instance Binary CMode
+deriving instance Generic CUid
+instance Binary CUid
+deriving instance Generic CGid
+instance Binary CGid
+
 data Metadata =
-    FileMetadata { filesize :: Int, mtime :: Int }
+    FileMetadata { filesize :: Int, perms :: FileMode, owner :: UserID, group :: GroupID, mtime :: Int }
   | DirMetadata { mtime :: Int }
   deriving (Eq, Show, Generic)
 instance Binary Metadata
@@ -63,10 +73,14 @@ appendPath (h:r) =
 emptyFileMetadata :: IO Metadata
 emptyFileMetadata = do
   now <- getNow
-  return $ FileMetadata { filesize = 0, mtime = now }
-
-zeroFileMetadata :: Metadata
-zeroFileMetadata = FileMetadata { filesize = 0, mtime = 0 }
+  ctx <- getFuseContext
+  return $ FileMetadata {
+    filesize = 0,
+    mtime = now,
+    owner = fuseCtxUserID ctx,
+    group = fuseCtxGroupID ctx,
+    perms = CMode $ fromIntegral 0o644
+  }
 
 emptyDirMetadata :: IO Metadata
 emptyDirMetadata = do
@@ -104,21 +118,26 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseGetFileSystemStats = fsGetFileSystemStats,
                          fuseSetFileTimes = fsSetFileTimes,
                          fuseSetFileMode = fsSetFileMode,
+                         fuseSetOwnerAndGroup = fsSetOwnerAndGroup,
                          fuseAccess = fsAccess,
                          fuseInit = fsInit
                        }
 
-
-updateTree :: Show a => Binary a => FilePath -> FilePath -> (Tree a -> Tree a) -> IO ()
-updateTree treeFile bakFile op = do
+updateTreeRet :: Show a => Binary a => FilePath -> FilePath -> (Tree a -> (Tree a, b)) -> IO b
+updateTreeRet treeFile bakFile op = do
   takeLock
   bytes <- BL.fromStrict <$> B.readFile treeFile
   tree <- return $ (runGet Tree.deserialize bytes)
-  tree' <- return $ op tree
+  (tree', res) <- return $ op tree
   bytes' <- return $ runPut $ Tree.serialize tree'
   BL.writeFile bakFile bytes'
   renameFile bakFile treeFile
   releaseLock
+  return res
+
+updateTree :: Show a => Binary a => FilePath -> FilePath -> (Tree a -> Tree a) -> IO ()
+updateTree treeFile bakFile op = do
+  updateTreeRet treeFile bakFile (\t -> (op t, ()))
 
 getTree :: Show a => Binary a => FilePath -> IO (Tree a)
 getTree treeFile = do
@@ -158,11 +177,12 @@ ensureFileExists path = do
 writeToFile :: FilePath -> B.ByteString -> FileOffset -> IO ()
 writeToFile path contents offset' = do
   offset <- return $ fromIntegral offset'
+  baseFileMetadata <- emptyFileMetadata
   ensureFileExists path
   updateTree metadatafile metadatafile2 (\t ->
     let metadata = case Tree.lookup t path of
           Just m -> m
-          Nothing -> zeroFileMetadata
+          Nothing -> baseFileMetadata
         length' = max (B.length contents + offset) (filesize metadata)
     in
     Tree.update t path $ metadata { filesize = length' })
@@ -180,10 +200,11 @@ writeToFile path contents offset' = do
 
 moveFile :: FilePath -> FilePath -> IO ()
 moveFile from to = do
+  baseFileMetadata <- emptyFileMetadata
   updateTree metadatafile metadatafile2 (\t ->
       let metadata = case Tree.lookup t from of
             Just m -> m
-            Nothing -> zeroFileMetadata
+            Nothing -> baseFileMetadata
       in
       Tree.add (Tree.remove t from) to metadata)
   updateTree datafile datafile2 (\t ->
@@ -192,6 +213,33 @@ moveFile from to = do
             Nothing -> B.pack "Lost contents!"
       in
       Tree.add (Tree.remove t from) to contents)
+
+setPerms :: FilePath -> FileMode -> IO Errno
+setPerms path perms = do
+  res <- updateTreeRet metadatafile metadatafile2 (\t ->
+      case Tree.lookup t path of
+        Nothing -> (t, False)
+        Just m ->
+            (Tree.update t path (m { perms = perms }), True)
+      )
+  if res then
+    return eOK
+  else
+    return eNOENT
+
+setOwnerGroup :: FilePath -> UserID -> GroupID -> IO Errno
+setOwnerGroup path uid gid = do
+  res <- updateTreeRet metadatafile metadatafile2 (\t ->
+      case Tree.lookup t path of
+        Nothing -> (t, False)
+        Just m ->
+            (Tree.update t path (m { owner = uid, group = gid }), True)
+      )
+  if res then
+    return eOK
+  else
+    return eNOENT
+
 
 fileExists :: FilePath -> IO Bool
 fileExists path = do
@@ -222,10 +270,10 @@ dirStat metadata ctx = FileStat {
 
 fileStat metadata ctx = FileStat {
     statEntryType = RegularFile,
-    statFileMode = foldr1 unionFileModes [ ownerReadMode, ownerWriteMode, groupReadMode, otherReadMode],
+    statFileMode = perms metadata,
     statLinkCount = 1,
-    statFileOwner = fuseCtxUserID ctx,
-    statFileGroup = fuseCtxGroupID ctx,
+    statFileOwner = owner metadata,
+    statFileGroup = group metadata,
     statSpecialDeviceID = 0,
     statFileSize = fromIntegral $ filesize metadata,
     statBlocks = 1,
@@ -260,10 +308,11 @@ fsReadDir dir = do
   metadata <- emptyDirMetadata
   tree <- getTree metadatafile
   writeErr $ "Reading dir " ++ show dir ++ " => " ++ show (Tree.children tree dir)
+  baseFileMetadata <- emptyFileMetadata
   val <- return $ Right $ [(".", dirStat metadata ctx),
                     ("..", dirStat metadata ctx)] ++
                    map (\path -> case Tree.lookup tree (appendPath [dir, path]) of
-                       Nothing -> (path, fileStat zeroFileMetadata ctx)
+                       Nothing -> (path, fileStat baseFileMetadata ctx)
                        Just md -> case md of
                          FileMetadata{} -> (path, fileStat md ctx)
                          DirMetadata{} -> (path, dirStat md ctx)
@@ -330,6 +379,16 @@ fsRename from to = do
   moveFile from to
   return eOK
 
+fsSetFileMode :: FilePath -> FileMode -> IO Errno
+fsSetFileMode path perms = do
+  writeErr $ "Setting perms on " ++ show path ++ " => " ++ show perms
+  setPerms path perms
+
+fsSetOwnerAndGroup :: FilePath -> UserID -> GroupID -> IO Errno
+fsSetOwnerAndGroup path uid gid = do
+  writeErr $ "Setting owner/group on " ++ show path ++ " => " ++ show uid ++ "/" ++ show gid
+  setOwnerGroup path uid gid
+
 fsSetFileSize :: FilePath -> FileOffset -> IO Errno
 fsSetFileSize path size = do
   writeErr $ "Resizing " ++ show path ++ " => " ++ show size
@@ -359,9 +418,6 @@ fsGetFileSystemStats str =
 
 fsSetFileTimes :: FilePath -> EpochTime -> EpochTime -> IO Errno
 fsSetFileTimes path t1 t2 = return eOK
-
-fsSetFileMode :: FilePath -> FileMode -> IO Errno
-fsSetFileMode path mode = return eOK
 
 fsAccess :: FilePath -> Int -> IO Errno
 fsAccess str uid = return eOK
