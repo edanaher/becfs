@@ -7,6 +7,7 @@ import Control.Exception.Base
 import Data.Binary (Binary)
 import Data.Binary.Get (runGet, runGetOrFail)
 import Data.Binary.Put (runPut)
+import qualified Data.ByteString as By
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as BL
 import Data.Time.Clock.POSIX (getPOSIXTime)
@@ -155,15 +156,27 @@ ensureFileExists path = do
     return ()
 
 writeToFile :: FilePath -> B.ByteString -> FileOffset -> IO ()
-writeToFile path contents offset = do
+writeToFile path contents offset' = do
+  offset <- return $ fromIntegral offset'
   ensureFileExists path
   updateTree metadatafile metadatafile2 (\t ->
     let metadata = case Tree.lookup t path of
           Just m -> m
           Nothing -> zeroFileMetadata
+        length' = max (B.length contents + offset) (filesize metadata)
     in
-    Tree.update t path $ metadata { filesize = B.length contents })
-  updateTree datafile datafile2 (\t -> Tree.update t path contents)
+    Tree.update t path $ metadata { filesize = length' })
+  updateTree datafile datafile2 (\t ->
+    let oldcontents = case Tree.lookup t path of
+          Just d -> d
+          Nothing -> B.empty
+        prefix = B.take offset oldcontents
+        suffix = B.drop (offset + B.length contents) oldcontents
+        prefix' = if B.length prefix == offset
+                  then prefix
+                  else B.append prefix $ By.replicate (offset - B.length prefix) (fromIntegral 0)
+    in
+    Tree.update t path $ B.concat [prefix', contents, suffix])
 
 moveFile :: FilePath -> FilePath -> IO ()
 moveFile from to = do
@@ -286,7 +299,7 @@ fsRead path () byteCount offset = do
 
 fsWrite :: FilePath -> () -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
 fsWrite path () bytes offset = do
-  writeErr $ "Writing path " ++ show path
+  writeErr $ "Writing path " ++ show path ++ " at offset " ++ show offset
   writeToFile path bytes offset
   return $ Right $ CSize $ fromIntegral $ B.length bytes
 
