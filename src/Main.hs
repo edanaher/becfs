@@ -111,6 +111,7 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseCreateSymbolicLink = fsCreateSymlink,
                          fuseReadSymbolicLink = fsReadSymlink,
                          fuseRemoveLink = fsRemoveLink,
+                         fuseRemoveDirectory = fsRemoveDirectory,
                          fuseRename = fsRename,
                          fuseSetFileSize = fsSetFileSize,
                          fuseOpenDirectory = fsOpenDir,
@@ -162,6 +163,10 @@ fileContents path = do
 
 removeFile :: FilePath -> IO ()
 removeFile path = do
+  updateTree metadatafile metadatafile2 (\t -> Tree.remove t path :: Tree Metadata)
+
+removeDir :: FilePath -> IO ()
+removeDir path = do
   updateTree metadatafile metadatafile2 (\t -> Tree.remove t path :: Tree Metadata)
 
 createFileMeta :: FilePath -> IO ()
@@ -412,6 +417,12 @@ fsRemoveLink :: FilePath -> IO Errno
 fsRemoveLink path = do
   writeErr $ "Unlinking " ++ show path
   removeFile path
+  return eOK
+
+fsRemoveDirectory :: FilePath -> IO Errno
+fsRemoveDirectory path = do
+  writeErr $ "Unlinking dir " ++ show path
+  removeDir path
   return eOK
 
 fsRename :: FilePath -> FilePath -> IO Errno
