@@ -264,10 +264,14 @@ fileExists path = do
   files <- fsPaths "/"
   return $ any (== path) files
 
+isMeta :: Tree.Key -> Bool
+isMeta (Tree.Meta{}) = True
+isMeta _ = False
+
 fsPaths :: FilePath -> IO [FilePath]
 fsPaths dir = do
   tree <- (getTree treefile :: IO (Tree TreeValue))
-  return $ map Tree.keyPath $ Tree.keysUnder tree (Tree.Meta "/")
+  return $ map Tree.keyPath $ filter isMeta $ Tree.keysUnder tree (Tree.Meta "/")
 
 
 dirStat metadata ctx = FileStat {
@@ -352,7 +356,7 @@ fsReadDir dir = do
                          FileMetadata{} -> (path, fileStat md ctx)
                          DirMetadata{} -> (path, dirStat md ctx)
                          SymlinkMetadata{} -> (path, symlinkStat md ctx)
-                       ) (map Tree.keyPath $ Tree.children tree (Tree.Meta dir))
+                       ) (map Tree.keyPath $ filter isMeta $ Tree.children tree (Tree.Meta dir))
   writeErr $ "  read dir " ++ show dir ++ " => " ++ (case val of Right dirs -> show dirs; Left _ -> "ERROR")
   return val
 
