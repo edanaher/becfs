@@ -34,4 +34,4 @@ Extract Inductive string => "Prelude.String" [ "[]" "(:)" ] "".
 Extract Inductive list => "([])" [ "[]" "(:)" ] "".
 Extract Inductive prod => "(,)" [ "(,)" ] "".
 (*Extract Inductive Prod => "Prelude.String" [ "[]" "(:)" ] "".*)
-Extraction "List.hs" Tree.
+Extraction "ListCoq.hs" Tree.
