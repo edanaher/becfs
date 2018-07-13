@@ -31,5 +31,5 @@ executable becfs
   -- other-modules:       
   -- other-extensions:    
   build-depends:       base == 4.*, HFuse, unix, bytestring, directory, binary, time
-  hs-source-dirs:      src
+  hs-source-dirs:      src, src/Tree -- Ew... coq extraction won't give Tree/ListCoq, so have to use ListCoq from Tree/
   default-language:    Haskell2010

@@ -23,8 +23,8 @@ import System.Posix.IO
 
 import System.Fuse
 
-import qualified Tree.ListPoc as Tree
-import Tree.ListPoc as Tree (Tree)
+import qualified Tree.List as Tree
+import Tree.List as Tree (Tree)
 
 treefile = "/tmp/becfs-tree"
 treefile2 = "/tmp/becfs-tree.new"
