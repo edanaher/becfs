@@ -67,9 +67,6 @@ children t prefix =
   in
   filter (all (/= '/') . keyPath) descendents
 
-keysUnder :: Tree t -> Key -> [Key]
-keysUnder t prefix = map fst t
-
 serialize :: Binary t => Tree t -> Put
 serialize [] = put False
 serialize ((k,v):r) = do

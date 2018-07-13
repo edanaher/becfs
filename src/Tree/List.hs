@@ -1,6 +1,6 @@
 {-# LANGUAGE StandaloneDeriving, DeriveGeneric #-}
 
-module Tree.List (module ListCoq, deserialize, serialize, keysUnder)
+module Tree.List (module ListCoq, deserialize, serialize)
 where
 
 import ListCoq
@@ -15,9 +15,6 @@ import GHC.Generics (Generic)
 deriving instance Show Key
 deriving instance Generic Key
 instance Binary Key
-
-keysUnder :: Tree t -> Key -> [Key]
-keysUnder t prefix = map fst t
 
 serialize :: Binary t => Tree t -> Put
 serialize [] = put False

@@ -261,18 +261,14 @@ setOwnerGroup path uid gid = do
 
 fileExists :: FilePath -> IO Bool
 fileExists path = do
-  files <- fsPaths "/"
-  return $ any (== path) files
+  tree <- (getTree treefile :: IO (Tree TreeValue))
+  case Tree.lookup tree (Tree.Meta path) of
+    Just _ -> return True
+    _ -> return False
 
 isMeta :: Tree.Key -> Bool
 isMeta (Tree.Meta{}) = True
 isMeta _ = False
-
-fsPaths :: FilePath -> IO [FilePath]
-fsPaths dir = do
-  tree <- (getTree treefile :: IO (Tree TreeValue))
-  return $ map Tree.keyPath $ filter isMeta $ Tree.keysUnder tree (Tree.Meta "/")
-
 
 dirStat metadata ctx = FileStat {
     statEntryType = Directory,
@@ -363,28 +359,23 @@ fsReadDir dir = do
 fsOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno ())
 fsOpen path mode flags = do
   writeErr $ "Opening path " ++ show path
-  paths <- fsPaths "/"
-  if path `elem` paths then do
-    writeErr $ "Opening path " ++ show path ++ " in " ++ show paths
-    case mode of
-      ReadOnly -> return $ Right ()
-      WriteOnly -> return $ Right ()
-      _ -> return $ Left eACCES
-  else do
-    writeErr $ "Failed to open path " ++ show path ++ " in " ++ show paths
-    return $ Right ()
+  tree <- (getTree treefile :: IO (Tree TreeValue))
+  case Tree.lookup tree (Tree.Data path) of
+    Just _ ->
+      case mode of
+        ReadOnly -> return $ Right ()
+        WriteOnly -> return $ Right ()
+        _ -> return $ Left eACCES
+    Nothing -> return $ Left eNOENT
 
 fsRead :: FilePath -> () -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 fsRead path () byteCount offset = do
   writeErr $ "Reading path " ++ show path
-  paths <- fsPaths "/"
-  contents <- fileContents path
-  if path `elem` paths then
-    case contents of
+  tree <- (getTree treefile :: IO (Tree TreeValue))
+  case Tree.lookup tree (Tree.Data path) of
       Nothing -> return $ Left eNOENT
-      Just c -> return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) c
-  else
-    return $ Left eNOENT
+      Just (Data c)  -> return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) c
+      _ -> return $ Left eNOSYS
 
 fsWrite :: FilePath -> () -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
 fsWrite path () bytes offset = do
