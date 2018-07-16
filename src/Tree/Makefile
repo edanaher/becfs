@@ -8,4 +8,5 @@ Util.vo : Util.v
 	coqc Util.v
 
 clean:
-	rm *.glob *.vo ListCoq.hs .*.aux
+	rm -f *.glob *.vo .*.aux *.o *.hi
+	rm -f ListCoq.hs MonoBtreeCoq.hs
