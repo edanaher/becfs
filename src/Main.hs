@@ -23,8 +23,8 @@ import System.Posix.IO
 
 import System.Fuse
 
-import qualified Tree.List as Tree
-import Tree.List as Tree (Tree)
+import qualified Tree.MonoBtree as Tree
+import Tree.MonoBtree as Tree (Tree)
 
 treefile = "/tmp/becfs-tree"
 treefile2 = "/tmp/becfs-tree.new"
@@ -172,7 +172,7 @@ createFileMeta :: FilePath -> IO ()
 createFileMeta path =  do
   metadata <- emptyFileMetadata
   writeErr $ "  Created metadata for " ++ show path
-  updateTree $ \t -> Tree.add t (Tree.Meta path) metadata
+  updateTree $ \t -> Tree.insert t (Tree.Meta path) metadata
   tree <- getTree treefile :: IO (Tree TreeValue)
   writeErr $ "  Now have tree" ++ show tree
 
@@ -216,20 +216,20 @@ moveFile from to = do
             Just m -> m
             Nothing -> baseFileMetadata
       in
-      Tree.add (Tree.remove t (Tree.Meta from)) (Tree.Meta to) metadata)
+      Tree.insert (Tree.remove t (Tree.Meta from)) (Tree.Meta to) metadata)
   updateTree (\t ->
       let contents = case Tree.lookup t (Tree.Data from) of
             Just b -> b
             Nothing -> Data $ B.pack "Lost contents!"
       in
-      Tree.add (Tree.remove t (Tree.Data from)) (Tree.Data to) contents)
+      Tree.insert (Tree.remove t (Tree.Data from)) (Tree.Data to) contents)
 
 createSymlink :: FilePath -> FilePath -> IO Errno
 createSymlink from to = do
   -- TODO: Error checking
   now <- getNow
   updateTree (\t ->
-    Tree.add t (Tree.Meta from) $ SymlinkMetadata { target = to, mtime = now })
+    Tree.insert t (Tree.Meta from) $ SymlinkMetadata { target = to, mtime = now })
   return eOK
 
 setPerms :: FilePath -> FileMode -> IO Errno
@@ -395,7 +395,7 @@ fsCreateDirectory :: FilePath -> FileMode -> IO Errno
 fsCreateDirectory path mode =  do
   writeErr $ "Creating directory " ++ show path
   metadata <- emptyDirMetadata
-  updateTree (\t -> Tree.add t (Tree.Meta path) metadata)
+  updateTree (\t -> Tree.insert t (Tree.Meta path) metadata)
   return eOK
 
 fsCreateSymlink :: FilePath -> FilePath -> IO Errno

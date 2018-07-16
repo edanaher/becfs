@@ -30,11 +30,10 @@ Module Tree.
     | Data s => Data (op s)
     end.
 
-  (* TODO: Use lt/gt instead of string_dec. *)
   Definition lt_key (a : Key) (b : Key) : bool :=
     match a, b with
-    | Meta s1, Meta s2 => if string_dec s1 s2 then true else false
-    | Data s1, Data s2 => if string_dec s1 s2 then true else false
+    | Meta s1, Meta s2 => if string_leb s1 s2 then true else false
+    | Data s1, Data s2 => if string_leb s1 s2 then true else false
     | Meta _, Data _ => true
     | Data _, Meta _ => false
     end.
@@ -62,26 +61,32 @@ Module Tree.
 
   Definition empty {t : Set} : Tree t := Leaf nil.
 
-  Definition add {t : Set} (tr : Tree t) (k : Key) (v : t) : Tree t :=
+  Definition insert {t : Set} (tr : Tree t) (k : Key) (v : t) : Tree t :=
     match tr with
     | Leaf vs => Leaf (insertSorted lt_key_pair vs (k, v))
     | InternalNode ks => tr
     end.
 
-  (*
-  Definition remove {t : Type} (tr : Tree t) (k : Key) : Tree t :=
-    filter (fun kv' => match kv' with pair k' _ => negb (key_beq k k') end) tr.
+  Definition remove {t : Set} (tr : Tree t) (k : Key) : Tree t :=
+    match tr with
+    | Leaf vs => Leaf (filter (fun kv' => match kv' with pair k' _ => negb (key_beq k k') end) vs)
+    | InternalNode _ => tr
+    end.
     
-  Definition update {t : Type} (tr : Tree t) (k : Key) (v : t) : Tree t :=
-    add (remove tr k) k v.
+  Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) : Tree t :=
+    insert (remove tr k) k v.
 
-  Definition lookup {t : Type} (tr : Tree t) (k : Key) : option t :=
-    match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) tr) with
-      | None => None
-      | Some (k, v) => Some v
+  Definition lookup {t : Set} (tr : Tree t) (k : Key) : option t :=
+    match tr with
+    | Leaf vs =>
+        match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) vs) with
+          | None => None
+          | Some (k, v) => Some v
+        end
+    | InternalNode _ => None
     end.
 
-  Definition children {t : Type} (tr : Tree t) (k : Key) :=
+  Definition children {t : Set} (tr : Tree t) (k : Key) :=
     let prefixSlash := add_final_slash (keyPath k) in
     let getSuffix := fun mpath => match mpath with
           | Meta path => match strip_prefix prefixSlash path with
@@ -94,7 +99,10 @@ Module Tree.
               end
           end
     in
-      filter (compose no_slashes keyPath) (get_justs (map (compose getSuffix fst) tr)).*)
+      match tr with
+      | Leaf vs => filter (compose no_slashes keyPath) (get_justs (map (compose getSuffix fst) vs))
+      | InternalNode _ => nil
+      end.
 End Tree.
 
 Extraction Language Haskell.

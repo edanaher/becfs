@@ -1,6 +1,6 @@
 {-# LANGUAGE StandaloneDeriving, DeriveGeneric #-}
 
-module Tree.MonoBtree (module MonoBtreeCoq{-, deserialize, serialize-})
+module Tree.MonoBtree (module MonoBtreeCoq, deserialize, serialize)
 where
 
 import MonoBtreeCoq
@@ -17,21 +17,25 @@ deriving instance Generic Key
 instance Binary Key
 deriving instance Show a => Show (Tree a)
 
-{-serialize :: Binary t => Tree t -> Put
-serialize [] = put False
-serialize ((k,v):r) = do
+serialize :: Binary t => Tree t -> Put
+serialize (Leaf []) = put False
+serialize (Leaf ((k,v):r)) = do
   put True
   put k
   put v
-  serialize r
+  serialize (Leaf r)
+serialize (InternalNode _) = put False
 
 deserialize :: Show t => Binary t => Get (Tree t)
-deserialize = do
-  hasMore <- get
-  if hasMore then do
-    k <- get
-    v <- get
-    t' <- deserialize
-    return ((k, v):t')
-  else
-    return []-}
+deserialize =
+  let deserializeLeaf = do
+        hasMore <- get
+        if hasMore then do
+          k <- get
+          v <- get
+          t' <- deserializeLeaf
+          return ((k, v):t')
+        else
+          return []
+   in
+     Leaf <$> deserializeLeaf

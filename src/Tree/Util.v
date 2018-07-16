@@ -34,3 +34,23 @@ Fixpoint no_slashes (s : string) : bool :=
   | String "/"%char _ => false
   | String _ s' => no_slashes s'
   end.
+
+Fixpoint ascii_leb (c1 : ascii) (c2 : ascii) : bool :=
+  let a1 := nat_of_ascii c1 in
+  let a2 := nat_of_ascii c2 in
+  Nat.leb a1 a2.
+
+Fixpoint string_leb (s1 : string) (s2 : string) : bool :=
+  match s1, s2 with
+  | EmptyString, EmptyString => true
+  | EmptyString, String _ _ => false
+  | String _ _, EmptyString => false
+  | String c1 s1', String c2 s2' =>
+      if ascii_leb c1 c2 then
+        if ascii_leb c2 c1 then
+          string_leb s1' s2'
+        else
+          true
+      else
+        false
+  end.

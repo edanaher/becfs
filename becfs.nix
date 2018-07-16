@@ -11,7 +11,7 @@ mkDerivation {
   license = stdenv.lib.licenses.bsd3;
   #doCheck = false;
   preBuild = ''
-    make -C src/Tree ListCoq.hs
+    make -C src/Tree
   '';
   #postInstall =
   #  ''
