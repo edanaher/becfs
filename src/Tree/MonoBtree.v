@@ -2,6 +2,7 @@ Require Extraction.
 Require Import Util.
 Require Import List.
 Require Import Coq.Lists.List.
+Import ListNotations.
 Require Import Coq.Program.Basics.
 Require Import Coq.Strings.Ascii.
 Require Import Coq.Strings.String.
@@ -44,7 +45,7 @@ Module Tree.
 
   Fixpoint insertSorted {t : Type} (lt : t -> t -> bool) (l : list t) (v : t) : list t :=
     match l with
-    | nil => v::nil
+    | [] => [v]
     | (h::r) =>
         if lt v h then
           v::h::r
@@ -59,7 +60,7 @@ Module Tree.
   Arguments InternalNode {t} _.
   Arguments Leaf {t} _.
 
-  Definition empty {t : Set} : Tree t := Leaf nil.
+  Definition empty {t : Set} : Tree t := Leaf [].
 
   Definition insert {t : Set} (tr : Tree t) (k : Key) (v : t) : Tree t :=
     match tr with
@@ -101,7 +102,7 @@ Module Tree.
     in
       match tr with
       | Leaf vs => filter (compose no_slashes keyPath) (get_justs (map (compose getSuffix fst) vs))
-      | InternalNode _ => nil
+      | InternalNode _ => []
       end.
 End Tree.
 
