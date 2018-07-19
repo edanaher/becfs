@@ -223,6 +223,24 @@ Module Tree.
       | Leaf vs => filter (compose no_slashes keyPath) (get_justs (map (compose getSuffix fst) vs))
       | InternalNode trs =>  (* TODO: Only search appropriate nodes, not the whole tree *)
           List.concat (map (fun ktr => children (snd ktr) k) trs)
+      (* This is better, but wrong - on [ [/a/b, /a/b] [/a/c]], wouldn't find /a/c because /a/b > /a.
+       * We need to compare the prefix. Also should only recurse if the next node starts after /a. *)
+      (* Regardless, reading the whole tree from disk swamps the runtime of this :( *)
+      | InternalNode trs => (fix childrenList trs :=
+          match trs with
+          | [] => []
+          | ((k', tr')::trs') =>
+              let hereChildren :=
+                children tr' k
+              in
+              let restChildren :=
+                if leb_option_key k k' then
+                  []
+                else
+                  childrenList trs'
+              in
+              hereChildren ++ childrenList trs'
+          end) trs *)
       end.
 
   Definition sampleTree_a := insert empty (Meta "a") "av"%string.
