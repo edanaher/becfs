@@ -15,7 +15,7 @@ Fixpoint strip_prefix (p : string) (s : string) : option string :=
     | EmptyString, _ => Some s
     | String _ _, EmptyString => None
     | String p1 p', String s1 s' =>
-        if ascii_dec p1 s1 then 
+        if ascii_dec p1 s1 then
           strip_prefix p' s'
         else
           None
@@ -43,7 +43,7 @@ Fixpoint ascii_leb (c1 : ascii) (c2 : ascii) : bool :=
 Fixpoint string_leb (s1 : string) (s2 : string) : bool :=
   match s1, s2 with
   | EmptyString, EmptyString => true
-  | EmptyString, String _ _ => false
+  | EmptyString, String _ _ => true
   | String _ _, EmptyString => false
   | String c1 s1', String c2 s2' =>
       if ascii_leb c1 c2 then

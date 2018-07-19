@@ -8,6 +8,9 @@ Require Import Coq.Strings.Ascii.
 Require Import Coq.Strings.String.
 
 Module Tree.
+  Definition trace {t : Type} (x : string) (y : t) : t := y.
+  Definition show {t : Type} (v : t) : string := "".
+
   Inductive Key : Set :=
   | Meta : string -> Key
   | Data : string -> Key.
@@ -62,16 +65,44 @@ Module Tree.
   Arguments InternalNode {t} _.
   Arguments Leaf {t} _.
 
-  Definition empty {t : Set} : Tree t := Leaf [].
-
-  Definition lastKey {t : Set} (kvs : list (Key * t)) : Key :=
-    let justs := map (fun kv => Some kv) kvs in
-    match last justs None with
-    | None => Meta "__DOESNOTEXIST__"
-    | Some kv => fst kv
+  Fixpoint treeWithoutValues {t : Set} (tr : Tree t) : Tree unit :=
+    match tr with
+    | Leaf l => Leaf (map (fun kv => (fst kv, tt)) l)
+    | InternalNode ts => InternalNode (map (fun kt => (fst kt, treeWithoutValues (snd kt))) ts)
     end.
 
-  Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) : Tree t :=
+
+  Definition empty {t : Set} : Tree t := Leaf [].
+
+  Fixpoint lastOpt {t : Set} (l : list t) : option t := match l with
+  | [] => None
+  | [h] => Some h
+  | h::r => lastOpt r
+  end.
+
+  Fixpoint lastKey {t : Set} (tr : Tree t) : Key := match tr with
+  | Leaf kvs =>
+      let justs := map (fun kv => Some kv) kvs in
+      match lastOpt kvs with
+      | None => Meta "__DOESNOTEXIST__" (* Impossible *)
+      | Some kv => fst kv
+      end
+  | InternalNode ns =>
+      (fix lastNode ns' := match ns' with
+        | [] => Meta "__DOESNOTEXIST__" (* Impossible *)
+        | [(k, tr')] => lastKey tr'
+        | h::r => lastNode r
+        end) ns
+
+  end.
+
+  Definition addTailKeys {t : Set} (trs : list (Tree t)) : list (option Key * Tree t) :=
+    match lastOpt trs with
+      | None => [] (* Impossible *)
+      | Some lastTree => (map (fun tr' => (Some (lastKey tr'), tr')) (removelast trs) ++ [(None, lastTree)])
+    end.
+
+  Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) : list (Tree t) :=
     match tr with
     | Leaf vs =>
         let newList := (insertSorted leb_key_pair vs (k, v)) in
@@ -79,26 +110,47 @@ Module Tree.
           let splitPoint := Nat.div (List.length newList) 2 in
           let front := List.firstn splitPoint newList in
           let back := List.skipn splitPoint newList in
-          InternalNode [(Some (lastKey front), Leaf front); (None, Leaf back)]
+          [Leaf front; Leaf back]
         else
-          Leaf newList
+          [Leaf newList]
     | InternalNode ks =>
-        InternalNode
-        ((fix insertList (ks : list (option Key * Tree t)) : list (option Key * Tree t) :=
-          match ks with
-          | [] => [] (* Impossibile *)
-          | ((Some k', tr')::ns) =>
-              if leb_key k k' then
-                (Some k, insertNode tr' k v)::ns
-              else
-                (Some k, tr')::insertList ns
-          | ((None, tr')::ns) => (None, insertNode tr' k v)::ns
-          end
-        ) ks)
+        let children :=
+          ((fix insertList (ks : list (option Key * Tree t)) : list (option Key * Tree t) :=
+            match ks with
+            | [] => [] (* Impossibile *)
+            | ((Some k', tr')::ns) =>
+                if leb_key k k' then
+                  match insertNode tr' k v with
+                  | [] => [] (* Impossible *)
+                  | [n] => (Some (lastKey n), n)::ns
+                  | ns' => map (fun n => (Some (lastKey n), n)) ns' ++ ns
+                  end
+                else
+                  (Some k', tr')::insertList ns
+            | ((None, tr')::ns) =>
+                match insertNode tr' k v with
+                | [] => [] (* Impossible *)
+                | [n] => (None, n)::ns
+                | ns' => addTailKeys ns'
+                end
+            end
+          ) ks) in
+        if Nat.ltb max_node_size (List.length children) then
+          let splitPoint := Nat.div (List.length children) 2 in
+          let front := List.firstn splitPoint children in
+          let back := List.skipn splitPoint children in
+          [InternalNode front; InternalNode back]
+        else
+          [InternalNode children]
+
     end.
 
   Definition insert {t : Set} (tr : Tree t) (k : Key) (v : t) : Tree t :=
-    insertNode tr k v.
+    match insertNode tr k v with
+    | [] => empty (* Impossible *)
+    | [tr'] => tr'
+    | ns => InternalNode (addTailKeys ns)
+    end.
 
   Definition remove {t : Set} (tr : Tree t) (k : Key) : Tree t :=
     match tr with
@@ -109,14 +161,24 @@ Module Tree.
   Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) : Tree t :=
     insert (remove tr k) k v.
 
-  Definition lookup {t : Set} (tr : Tree t) (k : Key) : option t :=
+  Fixpoint lookup {t : Set} (tr : Tree t) (k : Key) : option t :=
+    trace ("Looking up " ++ show (treeWithoutValues tr))
     match tr with
     | Leaf vs =>
         match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) vs) with
           | None => None
           | Some (k, v) => Some v
         end
-    | InternalNode _ => None
+    | InternalNode ks => (fix lookupList ks := match trace ("Looking up in " ++ show (map (fun kv => fst kv) ks)) ks with
+        | [] => None (* Impossible *)
+        | (None, tr')::ks' => lookup tr' k
+        | (Some k', tr')::ks' =>
+            if leb_key k k' then
+              lookup tr' k
+            else
+              lookupList ks'
+        end
+      ) ks
     end.
 
   Definition children {t : Set} (tr : Tree t) (k : Key) :=
@@ -137,15 +199,16 @@ Module Tree.
       | InternalNode _ => []
       end.
 
-  Definition sampleTree :=
-    let t := insert empty (Meta "a") "av"%string in
-    let t := insert t (Meta "c") "cv"%string in
-    let t := insert t (Meta "b") "bv"%string in
-    let t := insert t (Meta "d") "dv"%string in
-    let t := insert t (Meta "ab") "abv"%string in
-    let t := insert t (Meta "z") "zv"%string in
-    let t := insert t (Meta "q") "q"%string in
-    t.
+  Definition sampleTree_a := insert empty (Meta "a") "av"%string.
+  Definition sampleTree_c := insert sampleTree_a (Meta "c") "cv"%string.
+  Definition sampleTree_b := insert sampleTree_c (Meta "b") "bv"%string.
+  Definition sampleTree_d := insert sampleTree_b (Meta "d") "dv"%string.
+  Definition sampleTree_ab := insert sampleTree_d (Meta "ab") "abv"%string.
+  Definition sampleTree_z := insert sampleTree_ab (Meta "z") "zv"%string.
+  Definition sampleTree_q := insert sampleTree_z (Meta "q") "qv"%string.
+  Definition sampleTree_r := insert sampleTree_q (Meta "r") "rv"%string.
+  Definition sampleTree_aa := insert sampleTree_r (Meta "aa") "aav"%string.
+  Definition sampleTree := sampleTree_aa.
 End Tree.
 
 Extraction Language Haskell.
@@ -153,4 +216,8 @@ Require Import Coq.extraction.ExtrHaskellBasic.
 Require Import Coq.extraction.ExtrHaskellString.
 Extract Inlined Constant fst => "Prelude.fst".
 Extract Inlined Constant map => "Prelude.map".
+(*Extract Inlined Constant Tree.trace => "trace".
+Extract Inlined Constant Tree.show => "Prelude.show". *)
+Extract Inlined Constant Tree.trace => "(\ x y -> y)".
+Extract Inlined Constant Tree.show => "(\ _ -> """")".
 Extraction "MonoBtreeCoq.hs" Tree.
