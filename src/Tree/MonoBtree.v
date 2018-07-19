@@ -24,6 +24,12 @@ Module Tree.
       | _ => false
     end.
 
+  Definition option_key_beq (k1 : Key) (k2 : option Key) : bool :=
+    match k2 with
+    | None => false
+    | Some k2' => key_beq k1 k2'
+    end.
+
   Definition keyPath (k : Key) : string :=
     match k with
     | Meta s => s
@@ -42,6 +48,12 @@ Module Tree.
     | Data s1, Data s2 => if string_leb s1 s2 then true else false
     | Meta _, Data _ => true
     | Data _, Meta _ => false
+    end.
+
+  Definition leb_option_key (a : Key) (b : option Key) : bool :=
+    match b with
+    | None => true
+    | Some b' => leb_key a b'
     end.
 
 
@@ -152,10 +164,23 @@ Module Tree.
     | ns => InternalNode (addTailKeys ns)
     end.
 
-  Definition remove {t : Set} (tr : Tree t) (k : Key) : Tree t :=
+  Fixpoint remove {t : Set} (tr : Tree t) (k : Key) : Tree t :=
     match tr with
     | Leaf vs => Leaf (filter (fun kv' => match kv' with pair k' _ => negb (key_beq k k') end) vs)
-    | InternalNode _ => tr
+    | InternalNode trs => InternalNode ((fix removeList trs :=
+        match trs with
+        | [] => []
+        | (k', tr')::trs' =>
+            if leb_option_key k k' then
+              let tr'' := remove tr' k in
+              if option_key_beq k k' then
+                (Some (lastKey tr''), tr'')::trs' (* Fix k'*)
+              else
+                (k', tr'')::trs' (* Fix k'*)
+            else
+              (k', tr')::removeList trs'
+        end
+      ) trs)
     end.
 
   Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) : Tree t :=
