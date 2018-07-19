@@ -206,7 +206,7 @@ Module Tree.
       ) ks
     end.
 
-  Definition children {t : Set} (tr : Tree t) (k : Key) :=
+  Fixpoint children {t : Set} (tr : Tree t) (k : Key) : list Key :=
     let prefixSlash := add_final_slash (keyPath k) in
     let getSuffix := fun mpath => match mpath with
           | Meta path => match strip_prefix prefixSlash path with
@@ -221,7 +221,8 @@ Module Tree.
     in
       match tr with
       | Leaf vs => filter (compose no_slashes keyPath) (get_justs (map (compose getSuffix fst) vs))
-      | InternalNode _ => []
+      | InternalNode trs =>  (* TODO: Only search appropriate nodes, not the whole tree *)
+          List.concat (map (fun ktr => children (snd ktr) k) trs)
       end.
 
   Definition sampleTree_a := insert empty (Meta "a") "av"%string.
@@ -234,6 +235,15 @@ Module Tree.
   Definition sampleTree_r := insert sampleTree_q (Meta "r") "rv"%string.
   Definition sampleTree_aa := insert sampleTree_r (Meta "aa") "aav"%string.
   Definition sampleTree := sampleTree_aa.
+
+  Definition sampleHier_a := insert empty (Meta "/a") "av"%string.
+  Definition sampleHier_b := insert sampleHier_a (Meta "/b") "av"%string.
+  Definition sampleHier_ac := insert sampleHier_b (Meta "/a/c") "av"%string.
+  Definition sampleHier_ad := insert sampleHier_ac (Meta "/a/d") "av"%string.
+  Definition sampleHier_be := insert sampleHier_ad (Meta "/b/e") "av"%string.
+  Definition sampleHier_bef := insert sampleHier_be (Meta "/b/e/f") "av"%string.
+  Definition sampleHier_beg := insert sampleHier_bef (Meta "/b/e/g") "av"%string.
+  Definition sampleHier := sampleHier_beg.
 End Tree.
 
 Extraction Language Haskell.
