@@ -17,25 +17,22 @@ deriving instance Generic Key
 instance Binary Key
 deriving instance Show a => Show (Tree a)
 
-serialize :: Binary t => Tree t -> Put
-serialize (Leaf []) = put False
-serialize (Leaf ((k,v):r)) = do
-  put True
-  put k
-  put v
-  serialize (Leaf r)
-serialize (InternalNode _) = put False
+instance Binary a => Binary (Tree a) where
+  put (Leaf l) = do
+    put False
+    put l
+  put (InternalNode l) = do
+    put True
+    put l
+  get = do
+    isNode <- get
+    if isNode then do
+      children <- get
+      return $ InternalNode children
+    else do
+      values <- get
+      return $ Leaf values
 
-deserialize :: Show t => Binary t => Get (Tree t)
-deserialize =
-  let deserializeLeaf = do
-        hasMore <- get
-        if hasMore then do
-          k <- get
-          v <- get
-          t' <- deserializeLeaf
-          return ((k, v):t')
-        else
-          return []
-   in
-     Leaf <$> deserializeLeaf
+serialize tr = put tr
+deserialize :: Binary a => Get (Tree a)
+deserialize = get
