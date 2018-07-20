@@ -164,6 +164,9 @@ Module Tree.
     | ns => InternalNode (addTailKeys ns)
     end.
 
+  Definition insertMeta {t : Set} (tr : Tree t) (s : string) (v : t) : Tree t := insert tr (Meta s) v.
+  Definition insertData {t : Set} (tr : Tree t) (s : string) (v : t) : Tree t := insert tr (Data s) v.
+
   Fixpoint remove {t : Set} (tr : Tree t) (k : Key) : Tree t :=
     match tr with
     | Leaf vs => Leaf (filter (fun kv' => match kv' with pair k' _ => negb (key_beq k k') end) vs)
@@ -183,8 +186,14 @@ Module Tree.
       ) trs)
     end.
 
+  Definition removeMeta {t : Set} (tr : Tree t) (s : string) : Tree t := remove tr (Meta s).
+  Definition removeData {t : Set} (tr : Tree t) (s : string) : Tree t := remove tr (Data s).
+
   Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) : Tree t :=
     insert (remove tr k) k v.
+
+  Definition updateMeta {t : Set} (tr : Tree t) (s : string) (v : t) : Tree t := update tr (Meta s) v.
+  Definition updateData {t : Set} (tr : Tree t) (s : string) (v : t) : Tree t := update tr (Data s) v.
 
   Fixpoint lookup {t : Set} (tr : Tree t) (k : Key) : option t :=
     trace ("Looking up " ++ show (treeWithoutValues tr))
@@ -206,7 +215,11 @@ Module Tree.
       ) ks
     end.
 
-  Fixpoint children {t : Set} (tr : Tree t) (k : Key) : list Key :=
+  Definition lookupMeta {t : Set} (tr : Tree t) (s : string) : option t := lookup tr (Meta s).
+  Definition lookupData {t : Set} (tr : Tree t) (s : string) : option t := lookup tr (Data s).
+
+  Fixpoint children {t : Set} (tr : Tree t) (s : string) : list Key :=
+    let k := Meta s in
     let prefixSlash := add_final_slash (keyPath k) in
     let getSuffix := fun mpath => match mpath with
           | Meta path => match strip_prefix prefixSlash path with
@@ -222,11 +235,11 @@ Module Tree.
       match tr with
       | Leaf vs => filter (compose no_slashes keyPath) (get_justs (map (compose getSuffix fst) vs))
       | InternalNode trs =>  (* TODO: Only search appropriate nodes, not the whole tree *)
-          List.concat (map (fun ktr => children (snd ktr) k) trs)
+          List.concat (map (fun ktr => children (snd ktr) s) trs)
       (* This is better, but wrong - on [ [/a/b, /a/b] [/a/c]], wouldn't find /a/c because /a/b > /a.
        * We need to compare the prefix. Also should only recurse if the next node starts after /a. *)
       (* Regardless, reading the whole tree from disk swamps the runtime of this :( *)
-      | InternalNode trs => (fix childrenList trs :=
+      (*| InternalNode trs => (fix childrenList trs :=
           match trs with
           | [] => []
           | ((k', tr')::trs') =>
