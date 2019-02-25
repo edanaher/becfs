@@ -25,6 +25,7 @@ import System.Fuse
 
 import qualified Tree.MonoBtree as Tree
 import Tree.MonoBtree as Tree (Tree)
+import qualified Store.Layered as Store
 
 treefile = "/tmp/becfs-tree"
 treefile2 = "/tmp/becfs-tree.new"
@@ -88,7 +89,12 @@ emptyDirMetadata = do
   return $ DirMetadata { mtime = now }
 
 main :: IO ()
-main = fuseMain fsOps exnHandler
+main = do --fuseMain fsOps exnHandler
+  Store.writeNode "/tmp/becfs" "00001" (BL.fromStrict $ B.pack "hi there")
+  show <$> Store.readNode "/tmp/becfs" "00001" >>= print
+  Store.nextId "/tmp/becfs" >>= print
+  Store.writeNode "/tmp/becfs" "00004" (BL.fromStrict $ B.pack "hi there2")
+  Store.nextId "/tmp/becfs" >>= print
 
 {-# NOINLINE errlock #-}
 errlock :: MVar unit
