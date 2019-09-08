@@ -11,9 +11,20 @@ Module Tree.
   Definition trace {t : Type} (x : string) (y : t) : t := y.
   Definition show {t : Type} (v : t) : string := "".
 
+  Inductive NodeId : Set :=
+  | Id : nat -> NodeId.
+
   Inductive Key : Set :=
   | Meta : string -> Key
   | Data : string -> Key.
+
+  Inductive Tree (t : Set) : Set :=
+  | InternalNode : list (option Key * NodeId) -> Tree t
+  | Leaf : list (Key * t) -> Tree t.
+
+  Inductive WriteStatus {t : Set} : Set :=
+  | NeedId : nat -> WriteStatus
+  | Success : NodeId * Tree t -> list (NodeId * Tree t) -> WriteStatus.
 
   Definition max_node_size := 3.
 
@@ -70,18 +81,14 @@ Module Tree.
           h::insertSorted lt r v
     end.
 
-  Inductive Tree (t : Set) : Set :=
-  | InternalNode : list (option Key * (Tree t)) -> Tree t
-  | Leaf : list (Key * t) -> Tree t.
-
   Arguments InternalNode {t} _.
   Arguments Leaf {t} _.
 
-  Fixpoint treeWithoutValues {t : Set} (tr : Tree t) : Tree unit :=
+  (*Fixpoint treeWithoutValues {t : Set} (tr : Tree t) : Tree unit :=
     match tr with
     | Leaf l => Leaf (map (fun kv => (fst kv, tt)) l)
     | InternalNode ts => InternalNode (map (fun kt => (fst kt, treeWithoutValues (snd kt))) ts)
-    end.
+    end.*)
 
 
   Definition empty {t : Set} : Tree t := Leaf [].
@@ -92,7 +99,7 @@ Module Tree.
   | h::r => lastOpt r
   end.
 
-  Fixpoint lastKey {t : Set} (tr : Tree t) : Key := match tr with
+  (*Fixpoint lastKey {t : Set} (tr : Tree t) : Key := match tr with
   | Leaf kvs =>
       let justs := map (fun kv => Some kv) kvs in
       match lastOpt kvs with
@@ -106,13 +113,13 @@ Module Tree.
         | h::r => lastNode r
         end) ns
 
-  end.
+  end.*)
 
-  Definition addTailKeys {t : Set} (trs : list (Tree t)) : list (option Key * Tree t) :=
+  (*Definition addTailKeys {t : Set} (trs : list (Tree t)) : list (option Key * Tree t) :=
     match lastOpt trs with
       | None => [] (* Impossible *)
       | Some lastTree => (map (fun tr' => (Some (lastKey tr'), tr')) (removelast trs) ++ [(None, lastTree)])
-    end.
+    end.*)
 
   Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) : list (Tree t) :=
     match tr with
@@ -163,14 +170,15 @@ Module Tree.
     match insertNode tr k v with
     | [] => empty (* Impossible *)
     | [tr'] => tr'
-    | ns => InternalNode (addTailKeys ns)
+    | ns => empty (*InternalNode (addTailKeys ns)*)
     end.
 
   Definition insertMeta {t : Set} (tr : Tree t) (s : string) (v : t) : Tree t := insert tr (Meta s) v.
   Definition insertData {t : Set} (tr : Tree t) (s : string) (v : t) : Tree t := insert tr (Data s) v.
 
   Fixpoint remove {t : Set} (tr : Tree t) (k : Key) : Tree t :=
-    match tr with
+		empty.
+    (*match tr with
     | Leaf vs => Leaf (filter (fun kv' => match kv' with pair k' _ => negb (key_beq k k') end) vs)
     | InternalNode trs => InternalNode ((fix removeList trs :=
         match trs with
@@ -186,7 +194,7 @@ Module Tree.
               (k', tr')::removeList trs'
         end
       ) trs)
-    end.
+    end.*)
 
   Definition removeMeta {t : Set} (tr : Tree t) (s : string) : Tree t := remove tr (Meta s).
   Definition removeData {t : Set} (tr : Tree t) (s : string) : Tree t := remove tr (Data s).
@@ -198,7 +206,9 @@ Module Tree.
   Definition updateData {t : Set} (tr : Tree t) (s : string) (v : t) : Tree t := update tr (Data s) v.
 
   Fixpoint lookup {t : Set} (tr : Tree t) (k : Key) : option t :=
-    trace ("Looking up " ++ show (treeWithoutValues tr))
+		None.
+    (*
+    (*trace ("Looking up " ++ show (treeWithoutValues tr))*)
     match tr with
     | Leaf vs =>
         match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) vs) with
@@ -215,13 +225,14 @@ Module Tree.
               lookupList ks'
         end
       ) ks
-    end.
+    end. *)
 
   Definition lookupMeta {t : Set} (tr : Tree t) (s : string) : option t := lookup tr (Meta s).
   Definition lookupData {t : Set} (tr : Tree t) (s : string) : option t := lookup tr (Data s).
 
   Fixpoint children {t : Set} (tr : Tree t) (s : string) : list Key :=
-    let k := Meta s in
+    [].
+    (*let k := Meta s in
     let prefixSlash := add_final_slash (keyPath k) in
     let getSuffix := fun mpath => match mpath with
           | Meta path => match strip_prefix prefixSlash path with
@@ -256,13 +267,14 @@ Module Tree.
               in
               hereChildren ++ childrenList trs'
           end) trs *)
-      end.
+      end.*)
 
 End Tree.
 
 Extraction Language Haskell.
 Require Import Coq.extraction.ExtrHaskellBasic.
 Require Import Coq.extraction.ExtrHaskellString.
+Require Import Coq.extraction.ExtrHaskellNatInt.
 Extract Inlined Constant fst => "Prelude.fst".
 Extract Inlined Constant map => "Prelude.map".
 (*Extract Inlined Constant Tree.trace => "trace".
