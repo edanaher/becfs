@@ -23,8 +23,8 @@ import System.Posix.IO
 
 import System.Fuse
 
-import qualified Tree.MonoBtree as Tree
-import Tree.MonoBtree as Tree (Tree)
+import qualified Tree.Btree as Tree
+import Tree.Btree as Tree (Tree)
 import qualified Store.Layered as Store
 
 treefile = "/tmp/becfs-tree"
@@ -90,6 +90,19 @@ emptyDirMetadata = do
 
 main :: IO ()
 main = do --fuseMain fsOps exnHandler
+  testStore
+  testBtree
+
+testBtree :: IO ()
+testBtree = do
+  tree <- return Tree.empty
+  tree1 <- return $ Tree.insertMeta tree "/file3" "file 3 contents"
+  tree2 <- return $ Tree.insertMeta tree1 "/file1" "file 1 contents"
+  tree3 <- return $ Tree.insertMeta tree2 "/file2" "file 2 contents"
+  print $ show tree3
+
+testStore :: IO ()
+testStore = do
   Store.writeNode "/tmp/becfs" "00001" (BL.fromStrict $ B.pack "hi there")
   show <$> Store.readNode "/tmp/becfs" "00001" >>= print
   Store.nextId "/tmp/becfs" >>= print
