@@ -11,8 +11,7 @@ Module Tree.
   Definition trace {t : Type} (x : string) (y : t) : t := y.
   Definition show {t : Type} (v : t) : string := "".
 
-  Inductive NodeId : Set :=
-  | Id : nat -> NodeId.
+  Definition NodeId : Set := nat.
 
   Inductive Key : Set :=
   | Meta : string -> Key
@@ -96,7 +95,7 @@ Module Tree.
     end.*)
 
 
-  Definition empty {t : Set} : Tree t := Leaf (Id 0) [].
+  Definition empty {t : Set} : Tree t := Leaf 0 [].
 
   Fixpoint lastOpt {t : Set} (l : list t) : option t := match l with
   | [] => None
@@ -126,19 +125,23 @@ Module Tree.
       | Some lastTree => (map (fun tr' => (Some (lastKey tr'), tr')) (removelast trs) ++ [(None, lastTree)])
     end.*)
 
-  Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) : WriteStatus t :=
+  Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) (freshIds : list NodeId) : WriteStatus t :=
     match tr with
     | Leaf id entries =>
         let newList := (insertSorted leb_key_pair entries (k, v)) in
-        (*if Nat.eqb (List.length vs) max_node_size then
-          let splitPoint := Nat.div (List.length newList) 2 in
-          let front := List.firstn splitPoint newList in
-          let back := List.skipn splitPoint newList in
-          [Leaf front; Leaf back]
-        else *)
+        if negb (Nat.leb (List.length newList) max_node_size) then
+          match freshIds with
+          | (id1::id2::id3::_) =>
+            let splitPoint := Nat.div (List.length newList) 2 in
+            let front := List.firstn splitPoint newList in
+            let back := List.skipn splitPoint newList in
+            WriteSuccess (InternalNode id3 ((None, id1)::(None, id2)::[])) (Leaf id1 front::Leaf id2 back::[])
+          | _ => WriteNeedFreshId 3
+          end
+        else
           WriteSuccess (Leaf id newList) []
     | InternalNode id ks =>
-				WriteNeedFreshId 1
+        WriteNeedFreshId 1
     end. (*
         let children :=
           ((fix insertList (ks : list (option Key * Tree t)) : list (option Key * Tree t) :=
@@ -171,17 +174,17 @@ Module Tree.
 
     end.*)
 
-  Definition insert {t : Set} (tr : Tree t) (k : Key) (v : t) : WriteStatus t :=
-    match insertNode tr k v with
-	  |	WriteSuccess root nodes => WriteSuccess root nodes
+  Definition insert {t : Set} (tr : Tree t) (k : Key) (v : t) (freshIds : list NodeId): WriteStatus t :=
+    match insertNode tr k v freshIds with
+    |  WriteSuccess root nodes => WriteSuccess root nodes
     | x => x
     end.
 
-  Definition insertMeta {t : Set} (tr : Tree t) (s : string) (v : t) : WriteStatus t := insert tr (Meta s) v.
-  Definition insertData {t : Set} (tr : Tree t) (s : string) (v : t) : WriteStatus t := insert tr (Data s) v.
+  Definition insertMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := insert tr (Meta s) v.
+  Definition insertData {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := insert tr (Data s) v.
 
   Fixpoint remove {t : Set} (tr : Tree t) (k : Key) : WriteStatus t :=
-		WriteSuccess empty [].
+    WriteSuccess empty [].
     (*match tr with
     | Leaf vs => Leaf (filter (fun kv' => match kv' with pair k' _ => negb (key_beq k k') end) vs)
     | InternalNode trs => InternalNode ((fix removeList trs :=
@@ -203,17 +206,17 @@ Module Tree.
   Definition removeMeta {t : Set} (tr : Tree t) (s : string) : Tree.WriteStatus t := remove tr (Meta s).
   Definition removeData {t : Set} (tr : Tree t) (s : string) : Tree.WriteStatus t := remove tr (Data s).
 
-  Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) : WriteStatus t :=
-		match remove tr k with
-		| WriteSuccess root nodes => insert root k v
+  Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) (freshIds : list NodeId) : WriteStatus t :=
+    match remove tr k with
+    | WriteSuccess root nodes => insert root k v []
     | _ => WriteSuccess empty []
-		end.
+    end.
 
-  Definition updateMeta {t : Set} (tr : Tree t) (s : string) (v : t) : WriteStatus t := update tr (Meta s) v.
-  Definition updateData {t : Set} (tr : Tree t) (s : string) (v : t) : WriteStatus t := update tr (Data s) v.
+  Definition updateMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := update tr (Meta s) v.
+  Definition updateData {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := update tr (Data s) v.
 
   Fixpoint lookup {t : Set} (tr : Tree t) (k : Key) : option t :=
-		None.
+    None.
     (*
     (*trace ("Looking up " ++ show (treeWithoutValues tr))*)
     match tr with

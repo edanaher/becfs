@@ -14,10 +14,10 @@ writeNode :: String -> String -> BL.ByteString -> IO ()
 writeNode prefix id contents =
   BL.writeFile (prefix ++ "/" ++ id) contents
 
-nextId :: String -> IO String
+nextId :: String -> IO Int
 nextId prefix = do
   contents <- getDirectoryContents prefix
   final <- return $ last $ sort contents
   finalCount <- return $ read final
-  return $ show $ finalCount + 1
+  return $ finalCount + 1
 
