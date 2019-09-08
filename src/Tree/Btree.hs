@@ -18,20 +18,23 @@ instance Binary Key
 deriving instance Show a => Show (Tree a)
 
 instance Binary a => Binary (Tree a) where
-  put (Leaf l) = do
+  put (Leaf id l) = do
     put False
+    put id
     put l
-  put (InternalNode l) = do
+  put (InternalNode id l) = do
     put True
+    put id
     put l
   get = do
     isNode <- get
+    id <- get
     if isNode then do
       children <- get
-      return $ InternalNode children
+      return $ InternalNode id children
     else do
       values <- get
-      return $ Leaf values
+      return $ Leaf id values
 
 serialize tr = put tr
 deserialize :: Binary a => Get (Tree a)

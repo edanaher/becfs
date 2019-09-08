@@ -93,12 +93,17 @@ main = do --fuseMain fsOps exnHandler
   testStore
   testBtree
 
+extractTreeFromStatus :: Tree.WriteStatus t -> Tree t
+extractTreeFromStatus tr = case tr of
+	Tree.WriteSuccess root _ -> root
+	_ -> error "Not WriteSuccess"
+
 testBtree :: IO ()
 testBtree = do
   tree <- return Tree.empty
-  tree1 <- return $ Tree.insertMeta tree "/file3" "file 3 contents"
-  tree2 <- return $ Tree.insertMeta tree1 "/file1" "file 1 contents"
-  tree3 <- return $ Tree.insertMeta tree2 "/file2" "file 2 contents"
+  tree1 <- return $ extractTreeFromStatus $ Tree.insertMeta tree "/file3" "file 3 contents"
+  tree2 <- return $ extractTreeFromStatus $ Tree.insertMeta tree1 "/file1" "file 1 contents"
+  tree3 <- return $ extractTreeFromStatus $ Tree.insertMeta tree2 "/file2" "file 2 contents"
   print $ show tree3
 
 testStore :: IO ()
@@ -145,19 +150,21 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseInit = fsInit
                        }
 
-updateTreeRet :: Show a => Binary a => (Tree a -> (Tree a, b)) -> IO b
+updateTreeRet :: Show a => Binary a => (Tree a -> (Tree.WriteStatus a, b)) -> IO b
 updateTreeRet op = do
   takeLock
   bytes <- BL.fromStrict <$> B.readFile treefile
   tree <- return $ (runGet Tree.deserialize bytes)
-  (tree', res) <- return $ op tree
+  (tree', res) <- return $ case op tree of
+			(Tree.WriteSuccess root _, res) -> (root, res)
+			_ -> error "Didn't get writesuccess"
   bytes' <- return $ runPut $ Tree.serialize tree'
   BL.writeFile treefile2 bytes'
   renameFile treefile2 treefile
   releaseLock
   return res
 
-updateTree :: Show a => Binary a => (Tree a -> Tree a) -> IO ()
+updateTree :: Show a => Binary a => (Tree a -> Tree.WriteStatus a) -> IO ()
 updateTree op = do
   updateTreeRet (\t -> (op t, ()))
 
@@ -181,11 +188,11 @@ fileContents path = do
 
 removeFile :: FilePath -> IO ()
 removeFile path = do
-  updateTree (\t -> Tree.removeMeta t path :: Tree TreeValue)
+  updateTree (\t -> Tree.removeMeta t path :: Tree.WriteStatus TreeValue)
 
 removeDir :: FilePath -> IO ()
 removeDir path = do
-  updateTree (\t -> Tree.removeMeta t path :: Tree TreeValue)
+  updateTree (\t -> Tree.removeMeta t path :: Tree.WriteStatus TreeValue)
 
 createFileMeta :: FilePath -> IO ()
 createFileMeta path =  do
@@ -235,13 +242,17 @@ moveFile from to = do
             Just m -> m
             Nothing -> baseFileMetadata
       in
-      Tree.insertMeta (Tree.removeMeta t from) to metadata)
+			case Tree.removeMeta t from of
+				Tree.WriteSuccess t' _ -> Tree.insertMeta t' to metadata
+				_ -> error "Didn't get WriteSuccess!")
   updateTree (\t ->
       let contents = case Tree.lookupData t from of
             Just b -> b
             Nothing -> Data $ B.pack "Lost contents!"
       in
-      Tree.insertData (Tree.removeData t from) to contents)
+			case Tree.removeData t from of
+				Tree.WriteSuccess t' _ -> Tree.insertData t' to contents
+				_ -> error "Didn't get WriteSuccess!")
 
 createSymlink :: FilePath -> FilePath -> IO Errno
 createSymlink from to = do
@@ -255,7 +266,7 @@ setPerms :: FilePath -> FileMode -> IO Errno
 setPerms path perms = do
   res <- updateTreeRet (\t ->
       case Tree.lookupMeta t path of
-        Nothing -> (t, False)
+        Nothing -> (Tree.WriteSuccess t [], False)
         Just m ->
             (Tree.updateMeta t path (m { perms = perms }), True)
       )
@@ -268,7 +279,7 @@ setOwnerGroup :: FilePath -> UserID -> GroupID -> IO Errno
 setOwnerGroup path uid gid = do
   res <- updateTreeRet (\t ->
       case Tree.lookupMeta t path of
-        Nothing -> (t, False)
+        Nothing -> (Tree.WriteSuccess t [], False)
         Just m ->
             (Tree.updateMeta t path (m { owner = uid, group = gid }), True)
       )
