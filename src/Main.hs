@@ -107,6 +107,8 @@ testBtree = do
   print $ "Tree3: " ++ show tree3 ++ " / " ++ show children3
   Tree.WriteSuccess tree4 children4 <- insertMeta tree3 "/file4" "file 4 contents"
   print $ "Tree4: " ++ show tree4 ++ " / " ++ show children4
+  Tree.WriteSuccess tree5 children5 <- insertMeta tree4 "/file1a" "file 1a contents"
+  print $ "Tree5: " ++ show tree5 ++ " / " ++ show children5
 
 testStore :: IO ()
 testStore = do
@@ -126,6 +128,7 @@ insertMeta tr k v =
           Tree.WriteNeedFreshId n -> do
             nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
             aux $ freshIds ++ [nextId + i | i <- [0..n-1]]
+          Tree.WriteNeedNode id -> error $ "Need to load id " ++ show id
   in
   aux []
 

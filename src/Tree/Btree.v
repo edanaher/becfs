@@ -125,6 +125,17 @@ Module Tree.
       | Some lastTree => (map (fun tr' => (Some (lastKey tr'), tr')) (removelast trs) ++ [(None, lastTree)])
     end.*)
 
+  Fixpoint findChildId (ks : list (option Key * NodeId)) (k : Key) : NodeId :=
+    match ks with
+    | ((None, id)::[]) => id
+    | ((Some k', id)::ks') =>
+        if leb_key k' k then
+          findChildId ks' k
+        else
+          id
+    | _ => 0 (* Impossible *)
+    end.
+
   Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) (freshIds : list NodeId) : WriteStatus t :=
     match tr with
     | Leaf id entries =>
@@ -145,7 +156,8 @@ Module Tree.
         else
           WriteSuccess (Leaf id newList) []
     | InternalNode id ks =>
-        WriteNeedFreshId 1
+        WriteNeedNode (findChildId ks k)
+
     end. (*
         let children :=
           ((fix insertList (ks : list (option Key * Tree t)) : list (option Key * Tree t) :=
