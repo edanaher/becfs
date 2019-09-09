@@ -172,8 +172,8 @@ updateTreeRet op = do
   bytes <- BL.fromStrict <$> B.readFile treefile
   tree <- return $ (runGet Tree.deserialize bytes)
   (tree', res) <- return $ case op tree of
-			(Tree.WriteSuccess root _, res) -> (root, res)
-			_ -> error "Didn't get writesuccess"
+      (Tree.WriteSuccess root _, res) -> (root, res)
+      _ -> error "Didn't get writesuccess"
   bytes' <- return $ runPut $ Tree.serialize tree'
   BL.writeFile treefile2 bytes'
   renameFile treefile2 treefile
@@ -258,17 +258,17 @@ moveFile from to = do
             Just m -> m
             Nothing -> baseFileMetadata
       in
-			case Tree.removeMeta t from of
-				Tree.WriteSuccess t' _ -> Tree.insertMeta t' to metadata []
-				_ -> error "Didn't get WriteSuccess!")
+      case Tree.removeMeta t from of
+        Tree.WriteSuccess t' _ -> Tree.insertMeta t' to metadata []
+        _ -> error "Didn't get WriteSuccess!")
   updateTree (\t ->
       let contents = case Tree.lookupData t from of
             Just b -> b
             Nothing -> Data $ B.pack "Lost contents!"
       in
-			case Tree.removeData t from of
-				Tree.WriteSuccess t' _ -> Tree.insertData t' to contents []
-				_ -> error "Didn't get WriteSuccess!")
+      case Tree.removeData t from of
+        Tree.WriteSuccess t' _ -> Tree.insertData t' to contents []
+        _ -> error "Didn't get WriteSuccess!")
 
 createSymlink :: FilePath -> FilePath -> IO Errno
 createSymlink from to = do

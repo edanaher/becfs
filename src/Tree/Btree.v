@@ -135,7 +135,11 @@ Module Tree.
             let splitPoint := Nat.div (List.length newList) 2 in
             let front := List.firstn splitPoint newList in
             let back := List.skipn splitPoint newList in
-            WriteSuccess (InternalNode id3 ((None, id1)::(None, id2)::[])) (Leaf id1 front::Leaf id2 back::[])
+            let firstKey kvs := match kvs with
+              | ((k,v)::kvs) => Some k
+              | _ => None (* Impossible? *)
+            end in
+            WriteSuccess (InternalNode id3 ((firstKey back, id1)::(None, id2)::[])) (Leaf id1 front::Leaf id2 back::[])
           | _ => WriteNeedFreshId 3
           end
         else
