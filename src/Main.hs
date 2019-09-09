@@ -98,24 +98,34 @@ extractTreeFromStatus tr = case tr of
   Tree.WriteSuccess root _ -> root
   _ -> error "Not WriteSuccess"
 
+writeNode :: Binary t => Tree t -> IO ()
+writeNode tr =
+  let id = case tr of
+        Tree.Leaf id _ -> id
+        Tree.InternalNode id _ -> id in
+  Store.writeNode "/tmp/becfs" id (runPut $ Tree.serialize tr)
+
 testBtree :: IO ()
 testBtree = do
   tree <- return Tree.empty
   Tree.WriteSuccess tree1 _ <- insertMeta tree "/file3" "file 3 contents"
   Tree.WriteSuccess tree2 _ <- insertMeta tree1 "/file1" "file 1 contents"
   Tree.WriteSuccess tree3 children3 <- insertMeta tree2 "/file2" "file 2 contents"
+  writeNode tree3
   print $ "Tree3: " ++ show tree3 ++ " / " ++ show children3
   Tree.WriteSuccess tree4 children4 <- insertMeta tree3 "/file4" "file 4 contents"
+  writeNode tree4
+  mapM_ writeNode children4
   print $ "Tree4: " ++ show tree4 ++ " / " ++ show children4
-  Tree.WriteSuccess tree5 children5 <- insertMeta tree4 "/file1a" "file 1a contents"
-  print $ "Tree5: " ++ show tree5 ++ " / " ++ show children5
+  --Tree.WriteSuccess tree5 children5 <- insertMeta tree4 "/file1a" "file 1a contents"
+  --print $ "Tree5: " ++ show tree5 ++ " / " ++ show children5
 
 testStore :: IO ()
 testStore = do
-  Store.writeNode "/tmp/becfs" "00001" (BL.fromStrict $ B.pack "hi there")
-  show <$> Store.readNode "/tmp/becfs" "00001" >>= print
+  Store.writeNode "/tmp/becfs" 1 (BL.fromStrict $ B.pack "hi there")
+  show <$> Store.readNode "/tmp/becfs" 1 >>= print
   Store.nextId "/tmp/becfs" >>= print . show
-  Store.writeNode "/tmp/becfs" "00004" (BL.fromStrict $ B.pack "hi there2")
+  Store.writeNode "/tmp/becfs" 4 (BL.fromStrict $ B.pack "hi there2")
   Store.nextId "/tmp/becfs" >>= print . show
 
 insertMeta :: Tree t -> String -> t -> IO (Tree.WriteStatus t)

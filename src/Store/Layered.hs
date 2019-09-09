@@ -6,13 +6,13 @@ import qualified Data.ByteString.Lazy as BL
 import Data.List (sort)
 import System.Directory (getDirectoryContents)
 
-readNode :: String -> String -> IO BL.ByteString
+readNode :: String -> Int -> IO BL.ByteString
 readNode prefix id =
-  BL.fromStrict <$> B.readFile (prefix ++ "/" ++ id)
+  BL.fromStrict <$> B.readFile (prefix ++ "/" ++ show id)
 
-writeNode :: String -> String -> BL.ByteString -> IO ()
+writeNode :: String -> Int -> BL.ByteString -> IO ()
 writeNode prefix id contents =
-  BL.writeFile (prefix ++ "/" ++ id) contents
+  BL.writeFile (prefix ++ "/" ++ show id) contents
 
 nextId :: String -> IO Int
 nextId prefix = do
