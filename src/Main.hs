@@ -109,7 +109,9 @@ testBtree :: IO ()
 testBtree = do
   tree <- return Tree.empty
   Tree.WriteSuccess tree1 _ <- insertMeta tree "/file3" "file 3 contents"
+  print $ "Tree1: " ++ show tree1
   Tree.WriteSuccess tree2 _ <- insertMeta tree1 "/file1" "file 1 contents"
+  print $ "Tree2: " ++ show tree2
   Tree.WriteSuccess tree3 children3 <- insertMeta tree2 "/file2" "file 2 contents"
   writeNode tree3
   print $ "Tree3: " ++ show tree3 ++ " / " ++ show children3
@@ -131,20 +133,20 @@ testStore = do
 insertMeta :: Binary t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertMeta tr k v =
   let --aux :: [Int] -> [Tree t] -> IO (Tree.WriteStatus t)
-      aux freshIds nodes = do
+      aux freshIds nodes nextId = do
         attempt <- return $ Tree.insertMeta tr k v nodes freshIds
         case attempt of
           Tree.WriteSuccess _ _ -> return attempt
           Tree.WriteNeedFreshId n -> do
-            nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
-            aux (freshIds ++ [nextId + i | i <- [0..n-1]]) nodes
+            aux (freshIds ++ [nextId + i | i <- [0..n-1]]) nodes (nextId + n)
           Tree.WriteNeedNode id -> do
             bytes <- Store.readNode "/tmp/becfs" id
             newNode <- return $ runGet Tree.deserialize bytes
-            aux freshIds (nodes ++ [newNode])
+            aux freshIds (nodes ++ [newNode]) nextId
           Tree.WriteError err -> error $ "Error inserting meta: " ++ err
-  in
-  aux [] []
+  in do
+  nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
+  aux [] [] nextId
 
 
 {-# NOINLINE errlock #-}

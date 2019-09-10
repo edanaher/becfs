@@ -53,6 +53,20 @@ Module Tree.
     | InternalNode id _ => id
     end.
 
+  Definition getNodeFirstKey {t : Set} (node : Tree t) : option Key :=
+    let firstKeyLeaf kvs := match kvs with
+      | ((k,v)::kvs) => k
+      | _ => Meta "" (* Impossible? *)
+    end in
+    let firstKeyNode kvs := match kvs with
+      | ((k,v)::kvs) => k
+      | _ => None (* Impossible? *)
+    end in
+    match node with
+    | Leaf _ kvs => Some (firstKeyLeaf kvs)
+    | InternalNode _ kvs => firstKeyNode kvs
+    end.
+
   Definition option_key_beq (k1 : Key) (k2 : option Key) : bool :=
     match k2 with
     | None => false
@@ -157,12 +171,8 @@ Module Tree.
             let splitPoint := Nat.div (List.length newList) 2 in
             let front := List.firstn splitPoint newList in
             let back := List.skipn splitPoint newList in
-            let firstKey kvs := match kvs with
-              | ((k,v)::kvs) => Some k
-              | _ => None (* Impossible? *)
-            end in
-            IWriteSuccess [InternalNode id3 ((firstKey back, id1)::(None, id2)::[])] (Leaf id1 front::Leaf id2 back::[]) freshIds'
-          | _ => WriteNeedFreshId 3
+            IWriteSuccess [Leaf id1 front; Leaf id2 back] []  freshIds'
+          | _ => WriteNeedFreshId 3 (* We need two for the children, plus there'll be at least one new parent.*)
           end
         else
           match freshIds with
@@ -216,10 +226,14 @@ Module Tree.
 
   Definition insert {t : Set} (tr : Tree t) (k : Key) (v : t) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
     match insertNode tr k v nodes freshIds with
-    | IWriteSuccess (root::_) nodes [] => WriteSuccess root nodes
-    | IWriteSuccess (root::_) nodes _ => WriteError "Extra freshIds provided"
     | IWriteSuccess [] nodes _ => WriteError "No roots provided"
     | WriteSuccess _ _ => WriteError "External WriteSuccess provided by insertNode"
+    | IWriteSuccess [root] nodes [] => WriteSuccess root nodes
+    | IWriteSuccess [root1; root2] nodes [] => WriteNeedFreshId 1
+    | IWriteSuccess [root1; root2] nodes [id1] =>
+            WriteSuccess (InternalNode id1 [(getNodeFirstKey root2, getNodeId root1); (None, getNodeId root2)])
+                         (root1::root2::nodes)
+    | IWriteSuccess (root::_) nodes _ => WriteError "Extra freshIds provided"
     | x => x
     end.
 
