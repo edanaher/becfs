@@ -117,8 +117,8 @@ testBtree = do
   writeNode tree4
   mapM_ writeNode children4
   print $ "Tree4: " ++ show tree4 ++ " / " ++ show children4
-  --Tree.WriteSuccess tree5 children5 <- insertMeta tree4 "/file1a" "file 1a contents"
-  --print $ "Tree5: " ++ show tree5 ++ " / " ++ show children5
+  Tree.WriteSuccess tree5 children5 <- insertMeta tree4 "/file1a" "file 1a contents"
+  print $ "Tree5: " ++ show tree5 ++ " / " ++ show children5
 
 testStore :: IO ()
 testStore = do
@@ -128,19 +128,23 @@ testStore = do
   Store.writeNode "/tmp/becfs" 4 (BL.fromStrict $ B.pack "hi there2")
   Store.nextId "/tmp/becfs" >>= print . show
 
-insertMeta :: Tree t -> String -> t -> IO (Tree.WriteStatus t)
+insertMeta :: Binary t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertMeta tr k v =
-  let --aux :: [Int] -> IO (Tree.WriteStatus t)
-      aux freshIds = do
-        attempt <- return $ Tree.insertMeta tr k v freshIds
+  let --aux :: [Int] -> [Tree t] -> IO (Tree.WriteStatus t)
+      aux freshIds nodes = do
+        attempt <- return $ Tree.insertMeta tr k v nodes freshIds
         case attempt of
           Tree.WriteSuccess _ _ -> return attempt
           Tree.WriteNeedFreshId n -> do
             nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
-            aux $ freshIds ++ [nextId + i | i <- [0..n-1]]
-          Tree.WriteNeedNode id -> error $ "Need to load id " ++ show id
+            aux (freshIds ++ [nextId + i | i <- [0..n-1]]) nodes
+          Tree.WriteNeedNode id -> do
+            bytes <- Store.readNode "/tmp/becfs" id
+            newNode <- return $ runGet Tree.deserialize bytes
+            aux freshIds (nodes ++ [newNode])
+          Tree.WriteError err -> error $ "Error inserting meta: " ++ err
   in
-  aux []
+  aux [] []
 
 
 {-# NOINLINE errlock #-}
@@ -227,7 +231,7 @@ createFileMeta :: FilePath -> IO ()
 createFileMeta path =  do
   metadata <- emptyFileMetadata
   writeErr $ "  Created metadata for " ++ show path
-  updateTree $ \t -> Tree.insertMeta t path metadata []
+  updateTree $ \t -> Tree.insertMeta t path metadata [] []
   tree <- getTree treefile :: IO (Tree TreeValue)
   writeErr $ "  Now have tree" ++ show tree
 
@@ -272,7 +276,7 @@ moveFile from to = do
             Nothing -> baseFileMetadata
       in
       case Tree.removeMeta t from of
-        Tree.WriteSuccess t' _ -> Tree.insertMeta t' to metadata []
+        Tree.WriteSuccess t' _ -> Tree.insertMeta t' to metadata [] []
         _ -> error "Didn't get WriteSuccess!")
   updateTree (\t ->
       let contents = case Tree.lookupData t from of
@@ -280,7 +284,7 @@ moveFile from to = do
             Nothing -> Data $ B.pack "Lost contents!"
       in
       case Tree.removeData t from of
-        Tree.WriteSuccess t' _ -> Tree.insertData t' to contents []
+        Tree.WriteSuccess t' _ -> Tree.insertData t' to contents [] []
         _ -> error "Didn't get WriteSuccess!")
 
 createSymlink :: FilePath -> FilePath -> IO Errno
@@ -288,7 +292,7 @@ createSymlink from to = do
   -- TODO: Error checking
   now <- getNow
   updateTree (\t ->
-    Tree.insertMeta t from (SymlinkMetadata { target = to, mtime = now }) [])
+    Tree.insertMeta t from (SymlinkMetadata { target = to, mtime = now }) [] [])
   return eOK
 
 setPerms :: FilePath -> FileMode -> IO Errno
@@ -454,7 +458,7 @@ fsCreateDirectory :: FilePath -> FileMode -> IO Errno
 fsCreateDirectory path mode =  do
   writeErr $ "Creating directory " ++ show path
   metadata <- emptyDirMetadata
-  updateTree (\t -> Tree.insertMeta t path metadata [])
+  updateTree (\t -> Tree.insertMeta t path metadata [] [])
   return eOK
 
 fsCreateSymlink :: FilePath -> FilePath -> IO Errno

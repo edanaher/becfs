@@ -6,6 +6,7 @@ Import ListNotations.
 Require Import Coq.Program.Basics.
 Require Import Coq.Strings.Ascii.
 Require Import Coq.Strings.String.
+Open Scope string_scope.
 
 Module Tree.
   Definition trace {t : Type} (x : string) (y : t) : t := y.
@@ -27,11 +28,14 @@ Module Tree.
   Inductive WriteStatus (t : Set) : Set :=
   | WriteNeedFreshId : nat -> WriteStatus t
   | WriteNeedNode : NodeId -> WriteStatus t
-  | WriteSuccess : Tree t -> list (Tree t) -> WriteStatus t.
+  | WriteSuccess : Tree t -> list (Tree t) -> WriteStatus t
+  | WriteError : string -> WriteStatus t.
+
 
   Arguments WriteNeedFreshId {t} _.
   Arguments WriteNeedNode {t} _.
   Arguments WriteSuccess {t} _ _.
+  Arguments WriteError {t} _.
 
   Definition max_node_size := 3.
 
@@ -136,7 +140,7 @@ Module Tree.
     | _ => 0 (* Impossible *)
     end.
 
-  Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) (freshIds : list NodeId) : WriteStatus t :=
+  Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
     match tr with
     | Leaf id entries =>
         let newList := (insertSorted leb_key_pair entries (k, v)) in
@@ -156,8 +160,11 @@ Module Tree.
         else
           WriteSuccess (Leaf id newList) []
     | InternalNode id ks =>
-        WriteNeedNode (findChildId ks k)
-
+        let childId := findChildId ks k in
+        match nodes with
+        | [] => WriteNeedNode childId
+        | _ => WriteError "Need to look at the child nodes."
+        end
     end. (*
         let children :=
           ((fix insertList (ks : list (option Key * Tree t)) : list (option Key * Tree t) :=
@@ -190,14 +197,14 @@ Module Tree.
 
     end.*)
 
-  Definition insert {t : Set} (tr : Tree t) (k : Key) (v : t) (freshIds : list NodeId): WriteStatus t :=
-    match insertNode tr k v freshIds with
+  Definition insert {t : Set} (tr : Tree t) (k : Key) (v : t) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
+    match insertNode tr k v nodes freshIds with
     |  WriteSuccess root nodes => WriteSuccess root nodes
     | x => x
     end.
 
-  Definition insertMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := insert tr (Meta s) v.
-  Definition insertData {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := insert tr (Data s) v.
+  Definition insertMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := insert tr (Meta s) v.
+  Definition insertData {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := insert tr (Data s) v.
 
   Fixpoint remove {t : Set} (tr : Tree t) (k : Key) : WriteStatus t :=
     WriteSuccess empty [].
@@ -224,7 +231,7 @@ Module Tree.
 
   Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) (freshIds : list NodeId) : WriteStatus t :=
     match remove tr k with
-    | WriteSuccess root nodes => insert root k v []
+    | WriteSuccess root nodes => insert root k v [] []
     | _ => WriteSuccess empty []
     end.
 
