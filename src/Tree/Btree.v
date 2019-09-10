@@ -31,7 +31,6 @@ Module Tree.
   | WriteSuccess : Tree t -> list (Tree t) -> WriteStatus t
   | WriteError : string -> WriteStatus t.
 
-
   Arguments WriteNeedFreshId {t} _.
   Arguments WriteNeedNode {t} _.
   Arguments WriteSuccess {t} _ _.
@@ -44,6 +43,12 @@ Module Tree.
       | (Meta s, Meta s') => if string_dec s s' then true else false
       | (Data s, Data s') => if string_dec s s' then true else false
       | _ => false
+    end.
+
+  Definition getNodeId {t : Set} (node : Tree t) : NodeId :=
+    match node with
+    | Leaf id _ => id
+    | InternalNode id _ => id
     end.
 
   Definition option_key_beq (k1 : Key) (k2 : option Key) : bool :=
@@ -163,7 +168,14 @@ Module Tree.
         let childId := findChildId ks k in
         match nodes with
         | [] => WriteNeedNode childId
-        | _ => WriteError "Need to look at the child nodes."
+        | (child::nodes') =>
+            if Nat.eqb (getNodeId child) childId then
+              match insertNode child k v nodes' freshIds with
+              | WriteSuccess r ns => WriteSuccess tr (r::ns)
+              | status => status
+              end
+            else
+              WriteError ("Wrong child next in list " ++ show id ++ "/" ++ show childId)
         end
     end. (*
         let children :=
@@ -310,8 +322,8 @@ Require Import Coq.extraction.ExtrHaskellString.
 Require Import Coq.extraction.ExtrHaskellNatInt.
 Extract Inlined Constant fst => "Prelude.fst".
 Extract Inlined Constant map => "Prelude.map".
-(*Extract Inlined Constant Tree.trace => "trace".
-Extract Inlined Constant Tree.show => "Prelude.show". *)
+(*Extract Inlined Constant Tree.trace => "trace". *)
+Extract Inlined Constant Tree.show => "Prelude.show".
 Extract Inlined Constant Tree.trace => "(\ x y -> y)".
-Extract Inlined Constant Tree.show => "(\ _ -> """")".
+(*Extract Inlined Constant Tree.show => "(\ _ -> """")".*)
 Extraction "BtreeCoq.hs" Tree.

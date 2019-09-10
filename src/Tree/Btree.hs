@@ -20,9 +20,11 @@ deriving instance Show a => Show (Tree a)
 instance Binary a => Binary (Tree a) where
   put (Leaf id l) = do
     put False
+    put id
     put l
   put (InternalNode id l) = do
     put True
+    put id
     put l
   get = do
     isNode <- get
