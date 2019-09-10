@@ -29,11 +29,13 @@ Module Tree.
   | WriteNeedFreshId : nat -> WriteStatus t
   | WriteNeedNode : NodeId -> WriteStatus t
   | WriteSuccess : Tree t -> list (Tree t) -> WriteStatus t
+  | IWriteSuccess : list (Tree t) -> list (Tree t) -> list NodeId -> WriteStatus t
   | WriteError : string -> WriteStatus t.
 
   Arguments WriteNeedFreshId {t} _.
   Arguments WriteNeedNode {t} _.
   Arguments WriteSuccess {t} _ _.
+  Arguments IWriteSuccess {t} _ _ _.
   Arguments WriteError {t} _.
 
   Definition max_node_size := 3.
@@ -151,7 +153,7 @@ Module Tree.
         let newList := (insertSorted leb_key_pair entries (k, v)) in
         if negb (Nat.leb (List.length newList) max_node_size) then
           match freshIds with
-          | (id1::id2::id3::_) =>
+          | (id1::id2::id3::freshIds') =>
             let splitPoint := Nat.div (List.length newList) 2 in
             let front := List.firstn splitPoint newList in
             let back := List.skipn splitPoint newList in
@@ -159,11 +161,14 @@ Module Tree.
               | ((k,v)::kvs) => Some k
               | _ => None (* Impossible? *)
             end in
-            WriteSuccess (InternalNode id3 ((firstKey back, id1)::(None, id2)::[])) (Leaf id1 front::Leaf id2 back::[])
+            IWriteSuccess [InternalNode id3 ((firstKey back, id1)::(None, id2)::[])] (Leaf id1 front::Leaf id2 back::[]) freshIds'
           | _ => WriteNeedFreshId 3
           end
         else
-          WriteSuccess (Leaf id newList) []
+          match freshIds with
+          | (id1::freshIds') => IWriteSuccess [Leaf id1 newList] [] freshIds'
+          | [] => WriteNeedFreshId 1
+        end
     | InternalNode id ks =>
         let childId := findChildId ks k in
         match nodes with
@@ -171,7 +176,7 @@ Module Tree.
         | (child::nodes') =>
             if Nat.eqb (getNodeId child) childId then
               match insertNode child k v nodes' freshIds with
-              | WriteSuccess r ns => WriteSuccess tr (r::ns)
+              | IWriteSuccess rs ns freshIds' => IWriteSuccess [tr] (rs ++ ns) freshIds'
               | status => status
               end
             else
@@ -211,7 +216,10 @@ Module Tree.
 
   Definition insert {t : Set} (tr : Tree t) (k : Key) (v : t) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
     match insertNode tr k v nodes freshIds with
-    |  WriteSuccess root nodes => WriteSuccess root nodes
+    | IWriteSuccess (root::_) nodes [] => WriteSuccess root nodes
+    | IWriteSuccess (root::_) nodes _ => WriteError "Extra freshIds provided"
+    | IWriteSuccess [] nodes _ => WriteError "No roots provided"
+    | WriteSuccess _ _ => WriteError "External WriteSuccess provided by insertNode"
     | x => x
     end.
 
