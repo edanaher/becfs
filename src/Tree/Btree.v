@@ -150,15 +150,17 @@ Module Tree.
       | Some lastTree => (map (fun tr' => (Some (lastKey tr'), tr')) (removelast trs) ++ [(None, lastTree)])
     end.*)
 
-  Fixpoint findChildId (ks : list (option Key * NodeId)) (k : Key) : NodeId :=
+  Fixpoint findChildId (ks : list (option Key * NodeId)) (k : Key) : (list (option Key * NodeId)) * NodeId * (list (option Key *NodeId)) :=
     match ks with
-    | ((None, id)::[]) => id
+    | ((None, id)::[]) => ([], id, [])
     | ((Some k', id)::ks') =>
         if leb_key k' k then
-          findChildId ks' k
+          match findChildId ks' k with
+          | (pre, id', post) => (app pre [(Some k', id)], id', post)
+          end
         else
-          id
-    | _ => 0 (* Impossible *)
+          ([], id, ks')
+    | _ => ([], 0, []) (* Impossible *)
     end.
 
   Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
@@ -180,17 +182,19 @@ Module Tree.
           | [] => WriteNeedFreshId 1
         end
     | InternalNode id ks =>
-        let childId := findChildId ks k in
-        match nodes with
-        | [] => WriteNeedNode childId
-        | (child::nodes') =>
-            if Nat.eqb (getNodeId child) childId then
-              match insertNode child k v nodes' freshIds with
-              | IWriteSuccess rs ns freshIds' => IWriteSuccess [tr] (rs ++ ns) freshIds'
-              | status => status
-              end
-            else
-              WriteError ("Wrong child next in list " ++ show id ++ "/" ++ show childId)
+        match findChildId ks k with
+        | (pre, childId, post) =>
+          match nodes with
+          | [] => WriteNeedNode childId
+          | (child::nodes') =>
+              if Nat.eqb (getNodeId child) childId then
+                match insertNode child k v nodes' freshIds with
+                | IWriteSuccess rs ns freshIds' => IWriteSuccess [(InternalNode id (app pre (app (map (fun r => (None, getNodeId r)) rs) post)))] (rs ++ ns) freshIds' (* TODO: Set the last keys, get fresh Id *)
+                | status => status
+                end
+              else
+                WriteError ("Wrong child next in list " ++ show id ++ "/" ++ show childId)
+          end
         end
     end. (*
         let children :=
