@@ -188,7 +188,7 @@ Module Tree.
             let front := List.firstn splitPoint newList in
             let back := List.skipn splitPoint newList in
             let trees := [Leaf id1 front; Leaf id2 back] in
-            IWriteSuccess trees [Leaf id1 front; Leaf id2 back] freshIds'
+            IWriteSuccess trees [] freshIds'
           | _ => WriteNeedFreshId 3 (* We need two for the children, plus there'll be at least one new parent.*)
           end
         else
@@ -369,8 +369,8 @@ Require Import Coq.extraction.ExtrHaskellString.
 Require Import Coq.extraction.ExtrHaskellNatInt.
 Extract Inlined Constant fst => "Prelude.fst".
 Extract Inlined Constant map => "Prelude.map".
-(*Extract Inlined Constant Tree.trace => "trace". *)
+Extract Inlined Constant Tree.trace => "trace".
 Extract Inlined Constant Tree.show => "Prelude.show".
-Extract Inlined Constant Tree.trace => "(\ x y -> y)".
+(*Extract Inlined Constant Tree.trace => "(\ x y -> y)".*)
 (*Extract Inlined Constant Tree.show => "(\ _ -> """")".*)
 Extraction "BtreeCoq.hs" Tree.
