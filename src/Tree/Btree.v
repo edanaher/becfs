@@ -35,10 +35,12 @@ Module Tree.
   Arguments WriteNeedFreshId {t} _.
   Arguments WriteNeedNode {t} _.
   Arguments WriteSuccess {t} _ _.
-  Arguments IWriteSuccess {t} _ _ _.
+  Arguments IWriteSuccess {t} _ _.
   Arguments WriteError {t} _.
 
   Definition max_node_size := 3.
+
+  Definition invalidKey := Meta "__DOESNOTEXIST__".
 
   Definition key_beq (k1 : Key) (k2 : Key) : bool :=
     match (k1, k2) with
@@ -122,11 +124,22 @@ Module Tree.
 
   Definition empty {t : Set} : Tree t := Leaf 0 [].
 
-  Fixpoint lastOpt {t : Set} (l : list t) : option t := match l with
+  (*Fixpoint lastOpt {t : Set} (l : list t) : option t := match l with
   | [] => None
   | [h] => Some h
   | h::r => lastOpt r
-  end.
+  end.*)
+
+  (*Fixpoint firstKey {t : Set} (tr : Tree t) : Key := match tr with
+  | Leaf ((k, _)::_) => k
+  | InternalNode (_::(k,v) =>
+      (fix lastNode ns' := match ns' with
+        | [] => invalidKey (* Impossible *)
+        | [(k, tr')] => lastKey tr'
+        | h::r => lastNode r
+        end) ns
+  | _ => invalidKey (* Impossible *)
+  end.*)
 
   (*Fixpoint lastKey {t : Set} (tr : Tree t) : Key := match tr with
   | Leaf kvs =>
@@ -150,19 +163,20 @@ Module Tree.
       | Some lastTree => (map (fun tr' => (Some (lastKey tr'), tr')) (removelast trs) ++ [(None, lastTree)])
     end.*)
 
-  Fixpoint findChildId (ks : list (option Key * NodeId)) (k : Key) : (list (option Key * NodeId)) * NodeId * (list (option Key *NodeId)) :=
+  Fixpoint findChildId (ks : list (option Key * NodeId)) (k : Key) : (list (option Key * NodeId)) * (option Key * NodeId) * (list (option Key *NodeId)) :=
     match ks with
-    | ((None, id)::[]) => ([], id, [])
+    | ((None, id)::[]) => ([], (None, id), [])
     | ((Some k', id)::ks') =>
         if leb_key k' k then
           match findChildId ks' k with
-          | (pre, id', post) => (app pre [(Some k', id)], id', post)
+          | (pre, (maxKey, id'), post) => (app pre [(Some k', id)], (maxKey, id'), post)
           end
         else
-          ([], id, ks')
-    | _ => ([], 0, []) (* Impossible *)
+          ([], (Some k', id), ks')
+    | _ => ([], (None, 0), []) (* Impossible *)
     end.
 
+  (* They key passed up is the minimum key in the subtree *)
   Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
     match tr with
     | Leaf id entries =>
@@ -173,7 +187,8 @@ Module Tree.
             let splitPoint := Nat.div (List.length newList) 2 in
             let front := List.firstn splitPoint newList in
             let back := List.skipn splitPoint newList in
-            IWriteSuccess [Leaf id1 front; Leaf id2 back] []  freshIds'
+            let trees := [Leaf id1 front; Leaf id2 back] in
+            IWriteSuccess trees [Leaf id1 front; Leaf id2 back] freshIds'
           | _ => WriteNeedFreshId 3 (* We need two for the children, plus there'll be at least one new parent.*)
           end
         else
@@ -183,13 +198,19 @@ Module Tree.
         end
     | InternalNode id ks =>
         match findChildId ks k with
-        | (pre, childId, post) =>
+        | (pre, (maxKey, childId), post) =>
           match nodes with
           | [] => WriteNeedNode childId
           | (child::nodes') =>
               if Nat.eqb (getNodeId child) childId then
                 match insertNode child k v nodes' freshIds with
-                | IWriteSuccess rs ns freshIds' => IWriteSuccess [(InternalNode id (app pre (app (map (fun r => (None, getNodeId r)) rs) post)))] (rs ++ ns) freshIds' (* TODO: Set the last keys, get fresh Id *)
+                | IWriteSuccess rs ns freshIds' =>
+                    match freshIds' with
+                    | [] => WriteNeedFreshId 1
+                    | (id1::freshIds'') =>
+                        IWriteSuccess [(InternalNode id1 (app pre (app (map (fun r => (maxKey, getNodeId r)) rs) post)))]
+                                      (rs ++ ns) freshIds''
+                    end
                 | status => status
                 end
               else
