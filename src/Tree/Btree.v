@@ -183,7 +183,7 @@ Module Tree.
         let newList := (insertSorted leb_key_pair entries (k, v)) in
         if negb (Nat.leb (List.length newList) max_node_size) then
           match freshIds with
-          | (id1::id2::id3::freshIds') =>
+          | (id1::id2::freshIds') =>
             let splitPoint := Nat.div (List.length newList) 2 in
             let front := List.firstn splitPoint newList in
             let back := List.skipn splitPoint newList in

@@ -120,7 +120,13 @@ testBtree = do
   mapM_ writeNode children4
   print $ "Tree4: " ++ show tree4 ++ " / " ++ show children4
   Tree.WriteSuccess tree5 children5 <- insertMeta tree4 "/file1a" "file 1a contents"
+  writeNode tree5
+  mapM_ writeNode children5
   print $ "Tree5: " ++ show tree5 ++ " / " ++ show children5
+  Tree.WriteSuccess tree6 children6 <- insertMeta tree5 "/file6" "file 6 contents"
+  writeNode tree6
+  mapM_ writeNode children6
+  print $ "Tree6: " ++ show tree6 ++ " / " ++ show children6
 
 testStore :: IO ()
 testStore = do
