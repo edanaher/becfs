@@ -106,27 +106,23 @@ writeNode tr =
   Store.writeNode "/tmp/becfs" id (runPut $ Tree.serialize tr)
 
 testBtree :: IO ()
-testBtree = do
+testBtree =
+  let addNode tr n = do
+        Tree.WriteSuccess tr' newNodes <- insertMeta tr ("/file" ++ n)  ("file " ++ n ++ "contents")
+        writeNode tr'
+        mapM_ writeNode newNodes
+        putStr $ "Tree" ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
+        return tr'
+  in do
   tree <- return Tree.empty
-  Tree.WriteSuccess tree1 _ <- insertMeta tree "/file3" "file 3 contents"
-  print $ "Tree1: " ++ show tree1
-  Tree.WriteSuccess tree2 _ <- insertMeta tree1 "/file1" "file 1 contents"
-  print $ "Tree2: " ++ show tree2
-  Tree.WriteSuccess tree3 children3 <- insertMeta tree2 "/file2" "file 2 contents"
-  writeNode tree3
-  print $ "Tree3: " ++ show tree3 ++ " / " ++ show children3
-  Tree.WriteSuccess tree4 children4 <- insertMeta tree3 "/file4" "file 4 contents"
-  writeNode tree4
-  mapM_ writeNode children4
-  print $ "Tree4: " ++ show tree4 ++ " / " ++ show children4
-  Tree.WriteSuccess tree5 children5 <- insertMeta tree4 "/file1a" "file 1a contents"
-  writeNode tree5
-  mapM_ writeNode children5
-  print $ "Tree5: " ++ show tree5 ++ " / " ++ show children5
-  Tree.WriteSuccess tree6 children6 <- insertMeta tree5 "/file6" "file 6 contents"
-  writeNode tree6
-  mapM_ writeNode children6
-  print $ "Tree6: " ++ show tree6 ++ " / " ++ show children6
+  tree1 <- addNode tree "3"
+  tree2 <- addNode tree1 "1"
+  tree3 <- addNode tree2 "2"
+  tree4 <- addNode tree3 "4"
+  tree5 <- addNode tree4 "1a"
+  tree6 <- addNode tree5 "6"
+  tree7 <- addNode tree6 "8"
+  putStr "Success\n"
 
 testStore :: IO ()
 testStore = do
