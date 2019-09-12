@@ -19,7 +19,7 @@ Module Tree.
   | Data : string -> Key.
 
   Inductive Tree (t : Set) : Set :=
-  | InternalNode : NodeId -> list (option Key * NodeId) -> Tree t
+  | InternalNode : NodeId -> list (Key * NodeId) -> Tree t
   | Leaf : NodeId -> list (Key * t) -> Tree t.
 
   Arguments InternalNode {t} _.
@@ -55,18 +55,14 @@ Module Tree.
     | InternalNode id _ => id
     end.
 
-  Definition getNodeFirstKey {t : Set} (node : Tree t) : option Key :=
-    let firstKeyLeaf kvs := match kvs with
+  Definition getNodeFirstKey {t : Set} (node : Tree t) : Key :=
+    let firstKey {v : Set} (kvs : list (Key * v)) : Key := match kvs with
       | ((k,v)::kvs) => k
-      | _ => Meta "" (* Impossible? *)
-    end in
-    let firstKeyNode kvs := match kvs with
-      | ((k,v)::kvs) => k
-      | _ => None (* Impossible? *)
+      | _ => invalidKey (* Impossible? *)
     end in
     match node with
-    | Leaf _ kvs => Some (firstKeyLeaf kvs)
-    | InternalNode _ kvs => firstKeyNode kvs
+    | Leaf _ kvs => (firstKey kvs)
+    | InternalNode _ kvs => firstKey kvs
     end.
 
   Definition option_key_beq (k1 : Key) (k2 : option Key) : bool :=
@@ -163,17 +159,20 @@ Module Tree.
       | Some lastTree => (map (fun tr' => (Some (lastKey tr'), tr')) (removelast trs) ++ [(None, lastTree)])
     end.*)
 
-  Fixpoint findChildId (ks : list (option Key * NodeId)) (k : Key) : (list (option Key * NodeId)) * (option Key * NodeId) * (list (option Key *NodeId)) :=
-    match ks with
-    | ((None, id)::[]) => ([], (None, id), [])
-    | ((Some k', id)::ks') =>
-        if leb_key k' k then
-          match findChildId ks' k with
-          | (pre, (maxKey, id'), post) => (app pre [(Some k', id)], (maxKey, id'), post)
-          end
-        else
-          ([], (Some k', id), ks')
-    | _ => ([], (None, 0), []) (* Impossible *)
+  Fixpoint findChildId (children : list (Key * NodeId)) (k : Key) : (list (Key * NodeId)) * (Key * NodeId) * (list (Key * NodeId)) :=
+    match children with
+    | (candidate::children') =>
+        match children' with
+        | [] => ([], candidate, [])
+        | ((k', id)::children'') =>
+            if leb_key k' k then
+              match findChildId children' k with
+              | (pre, (minKey, id'), post) => (app pre [candidate], (minKey, id'), post)
+              end
+            else
+              ([], (candidate), ((k', id)::children''))
+        end
+    | _ => ([], (invalidKey, 0), []) (* Impossible *)
     end.
 
   (* They key passed up is the minimum key in the subtree *)
@@ -196,9 +195,9 @@ Module Tree.
           | (id1::freshIds') => IWriteSuccess [Leaf id1 newList] [] freshIds'
           | [] => WriteNeedFreshId 1
         end
-    | InternalNode id ks =>
-        match findChildId ks k with
-        | (pre, (maxKey, childId), post) =>
+    | InternalNode id children =>
+        match findChildId children k with
+        | (pre, (minKey, childId), post) =>
           match nodes with
           | [] => WriteNeedNode childId
           | (child::nodes') =>
@@ -208,7 +207,7 @@ Module Tree.
                     match freshIds' with
                     | [] => WriteNeedFreshId 1
                     | (id1::freshIds'') =>
-                        IWriteSuccess [(InternalNode id1 (app pre (app (map (fun r => (maxKey, getNodeId r)) rs) post)))]
+                        IWriteSuccess [(InternalNode id1 (app pre (app (map (fun r => (getNodeFirstKey r, getNodeId r)) rs) post)))]
                                       (rs ++ ns) freshIds''
                     end
                 | status => status
@@ -256,7 +255,7 @@ Module Tree.
     | IWriteSuccess [root] nodes [] => WriteSuccess root nodes
     | IWriteSuccess [root1; root2] nodes [] => WriteNeedFreshId 1
     | IWriteSuccess [root1; root2] nodes [id1] =>
-            WriteSuccess (InternalNode id1 [(getNodeFirstKey root2, getNodeId root1); (None, getNodeId root2)])
+            WriteSuccess (InternalNode id1 [(getNodeFirstKey root1, getNodeId root1); (getNodeFirstKey root2, getNodeId root2)])
                          (root1::root2::nodes)
     | IWriteSuccess (root::_) nodes _ => WriteError "Extra freshIds provided"
     | x => x

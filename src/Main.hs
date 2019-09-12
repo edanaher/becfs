@@ -108,10 +108,10 @@ writeNode tr =
 testBtree :: IO ()
 testBtree =
   let addNode tr n = do
-        Tree.WriteSuccess tr' newNodes <- insertMeta tr ("/file" ++ n)  ("file " ++ n ++ "contents")
+        Tree.WriteSuccess tr' newNodes <- insertMeta tr ("/file" ++ n)  ("")
         writeNode tr'
         mapM_ writeNode newNodes
-        putStr $ "Tree" ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
+        putStr $ "Tree+" ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
         return tr'
   in do
   tree <- return Tree.empty
@@ -122,6 +122,9 @@ testBtree =
   tree5 <- addNode tree4 "1a"
   tree6 <- addNode tree5 "6"
   tree7 <- addNode tree6 "8"
+  tree8 <- addNode tree7 "7"
+  tree9 <- addNode tree8 "11"
+  tree10 <- addNode tree9 "13"
   putStr "Success\n"
 
 testStore :: IO ()
