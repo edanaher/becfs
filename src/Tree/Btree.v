@@ -38,6 +38,17 @@ Module Tree.
   Arguments IWriteSuccess {t} _ _.
   Arguments WriteError {t} _.
 
+  Inductive ReadStatus (t : Set) : Set :=
+  | ReadNeedNode : NodeId -> ReadStatus t
+  | ReadSuccess : t -> ReadStatus t
+  | ReadDoesNotExist : ReadStatus t
+  | ReadError : string -> ReadStatus t.
+
+  Arguments ReadNeedNode {t} _.
+  Arguments ReadSuccess {t} _.
+  Arguments ReadDoesNotExist {t}.
+  Arguments ReadError {t} _.
+
   Definition max_node_size := 3.
 
   Definition invalidKey := Meta "__DOESNOTEXIST__".
@@ -309,30 +320,28 @@ Module Tree.
   Definition updateMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := update tr (Meta s) v.
   Definition updateData {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := update tr (Data s) v.
 
-  Fixpoint lookup {t : Set} (tr : Tree t) (k : Key) : option t :=
-    None.
-    (*
+  Fixpoint lookup {t : Set} (tr : Tree t) (k : Key) : ReadStatus t :=
     (*trace ("Looking up " ++ show (treeWithoutValues tr))*)
     match tr with
-    | Leaf vs =>
+    | Leaf _ vs =>
         match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) vs) with
-          | None => None
-          | Some (k, v) => Some v
+          | None => ReadDoesNotExist
+          | Some (k, v) => ReadSuccess v
         end
-    | InternalNode ks => (fix lookupList ks := match trace ("Looking up in " ++ show (map (fun kv => fst kv) ks)) ks with
+    | InternalNode _ ks => ReadError "Internal nodes not yet supported"
+      (*(fix lookupList ks := match (*trace ("Looking up in " ++ show (map (fun kv => fst kv) ks))*) ks with
         | [] => None (* Impossible *)
-        | (None, tr')::ks' => lookup tr' k
-        | (Some k', tr')::ks' =>
+        | (k', tr')::ks' =>
             if leb_key k k' then
-              lookup tr' k
+              None
             else
-              lookupList ks'
+              None
         end
-      ) ks
-    end. *)
+      ) ks*)
+    end.
 
-  Definition lookupMeta {t : Set} (tr : Tree t) (s : string) : option t := lookup tr (Meta s).
-  Definition lookupData {t : Set} (tr : Tree t) (s : string) : option t := lookup tr (Data s).
+  Definition lookupMeta {t : Set} (tr : Tree t) (s : string) : ReadStatus t := lookup tr (Meta s).
+  Definition lookupData {t : Set} (tr : Tree t) (s : string) : ReadStatus t := lookup tr (Data s).
 
   Fixpoint children {t : Set} (tr : Tree t) (s : string) : list Key :=
     [].

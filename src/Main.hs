@@ -121,21 +121,31 @@ printBtree tr =
   in
   aux "" tr
 
-
 testBtree :: IO ()
 testBtree =
   let addNode tr n = do
-        Tree.WriteSuccess tr' newNodes <- insertMeta tr ("/file" ++ n)  ("")
+        Tree.WriteSuccess tr' newNodes <- insertMeta tr ("/file" ++ n)  ("Metadata for " ++ show n)
         writeNode tr'
         mapM_ writeNode newNodes
         putStr $ "Tree+" ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
         return tr'
+      readMeta tr k = do
+        readResult <- lookupMeta tr k
+        case readResult of
+          Tree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"
+          Tree.ReadDoesNotExist -> putStr $ "Read " ++ k ++ " DOESNOTEXIST" ++ "\n"
+          Tree.ReadError str -> putStr $ "Read " ++ k ++ " ERROR: " ++ str ++ "\n"
+          Tree.ReadNeedNode nodeId -> putStr $ "Read " ++ k ++ " NEED NODE" ++ show nodeId ++ "\n"
   in do
   tree <- return Tree.empty
   tree1 <- addNode tree "3"
   tree2 <- addNode tree1 "1"
   tree3 <- addNode tree2 "2"
-  tree4 <- addNode tree3 "4"
+  readMeta tree3 "/file1"
+  readMeta tree3 "/file2"
+  readMeta tree3 "/file3"
+  readMeta tree3 "/file4"
+{-tree4 <- addNode tree3 "4"
   tree5 <- addNode tree4 "1a"
   tree6 <- addNode tree5 "6"
   tree7 <- addNode tree6 "8"
@@ -157,7 +167,7 @@ testBtree =
   tree23 <- addNode tree22 "76"
   tree24 <- addNode tree23 "67"
   tree25 <- addNode tree24 "58"
-  printBtree tree25
+  printBtree tree25-}
   putStr "Success\n"
 
 testStore :: IO ()
@@ -186,6 +196,9 @@ insertMeta tr k v =
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
   aux [] [] nextId
 
+lookupMeta :: Binary t => Tree t -> String -> IO (Tree.ReadStatus t)
+lookupMeta tr k =
+  return $ Tree.lookupMeta tr k
 
 {-# NOINLINE errlock #-}
 errlock :: MVar unit
@@ -256,8 +269,9 @@ getTree treeFile = do
 
 fileContents :: FilePath -> IO (Maybe B.ByteString)
 fileContents path = do
+  return $ Just B.empty{-
   tree <- getTree treefile
-  return $ Tree.lookupData tree path
+  return $ Tree.lookupData tree path-}
 
 removeFile :: FilePath -> IO ()
 removeFile path = do
@@ -289,16 +303,16 @@ writeToFile path contents offset' = do
   baseFileMetadata <- emptyFileMetadata
   ensureFileExists path
   updateTree (\t ->
-    let metadata = case Tree.lookupMeta t path of
+    let metadata = baseFileMetadata {-case Tree.lookupMeta t path of
           Just m -> m
-          Nothing -> baseFileMetadata
+          Nothing -> baseFileMetadata-}
         length' = max (B.length contents + offset) (filesize metadata)
     in
     Tree.updateMeta t path (metadata { filesize = length' }) [])
   updateTree (\t ->
-    let oldcontents = case Tree.lookupData t path of
+    let oldcontents = B.empty{-case Tree.lookupData t path of
           Just (Data d) -> d
-          _ -> B.empty
+          _ -> B.empty-}
         prefix = B.take offset oldcontents
         suffix = B.drop (offset + B.length contents) oldcontents
         prefix' = if B.length prefix == offset
@@ -311,17 +325,17 @@ moveFile :: FilePath -> FilePath -> IO ()
 moveFile from to = do
   baseFileMetadata <- emptyFileMetadata
   updateTree (\t ->
-      let metadata = case Tree.lookupMeta t from of
+      let metadata = baseFileMetadata{-case Tree.lookupMeta t from of
             Just m -> m
-            Nothing -> baseFileMetadata
+            Nothing -> baseFileMetadata-}
       in
       case Tree.removeMeta t from of
         Tree.WriteSuccess t' _ -> Tree.insertMeta t' to metadata [] []
         _ -> error "Didn't get WriteSuccess!")
   updateTree (\t ->
-      let contents = case Tree.lookupData t from of
+      let contents = B.pack "Unimplemented"{-case Tree.lookupData t from of
             Just b -> b
-            Nothing -> Data $ B.pack "Lost contents!"
+            Nothing -> Data $ B.pack "Lost contents!"-}
       in
       case Tree.removeData t from of
         Tree.WriteSuccess t' _ -> Tree.insertData t' to contents [] []
@@ -337,6 +351,7 @@ createSymlink from to = do
 
 setPerms :: FilePath -> FileMode -> IO Errno
 setPerms path perms = do
+  return eNOENT{-
   res <- updateTreeRet (\t ->
       case Tree.lookupMeta t path of
         Nothing -> (Tree.WriteSuccess t [], False)
@@ -347,10 +362,11 @@ setPerms path perms = do
     return eOK
   else
     return eNOENT
+  -}
 
 setOwnerGroup :: FilePath -> UserID -> GroupID -> IO Errno
 setOwnerGroup path uid gid = do
-  res <- updateTreeRet (\t ->
+  return eNOENT{-res <- updateTreeRet (\t ->
       case Tree.lookupMeta t path of
         Nothing -> (Tree.WriteSuccess t [], False)
         Just m ->
@@ -359,15 +375,16 @@ setOwnerGroup path uid gid = do
   if res then
     return eOK
   else
-    return eNOENT
+    return eNOENT-}
 
 
 fileExists :: FilePath -> IO Bool
 fileExists path = do
+  return False{-
   tree <- (getTree treefile :: IO (Tree TreeValue))
   case Tree.lookupMeta tree path of
     Just _ -> return True
-    _ -> return False
+    _ -> return False-}
 
 isMeta :: Tree.Key -> Bool
 isMeta (Tree.Meta{}) = True
@@ -426,9 +443,9 @@ fsGetFileStat "/" = do
   return $ Right $ dirStat metadata ctx
 fsGetFileStat path = do
   writeErr $ "Statting " ++ show path
-  tree <- getTree treefile
-  writeErr $ "  statting " ++ show path ++ ": loaded tree " ++ show tree
-  case Tree.lookupMeta tree path of
+  --tree <- getTree treefile
+  --writeErr $ "  statting " ++ show path ++ ": loaded tree " ++ show tree
+  return $ Left eNOENT{-case Tree.lookupMeta tree path of
     Just metadata -> do
       writeErr $ "  statting " ++ show path ++ " => " ++ show metadata
       ctx <- getFuseContext
@@ -436,12 +453,13 @@ fsGetFileStat path = do
         FileMetadata{} -> return $ Right $ fileStat metadata ctx
         DirMetadata{} -> return $ Right $ dirStat metadata ctx
         SymlinkMetadata{} -> return $ Right $ symlinkStat metadata ctx
-    Nothing -> return $ Left eNOENT
+    Nothing -> return $ Left eNOENT-}
 
 fsOpenDir _ = return eOK
 
 fsReadDir :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
 fsReadDir dir = do
+  return $ Right []{-
   ctx <- getFuseContext
   metadata <- emptyDirMetadata
   tree <- getTree treefile
@@ -457,28 +475,30 @@ fsReadDir dir = do
                          SymlinkMetadata{} -> (path, symlinkStat md ctx)
                        ) (map Tree.keyPath $ filter isMeta $ Tree.children tree dir)
   writeErr $ "  read dir " ++ show dir ++ " => " ++ (case val of Right dirs -> show dirs; Left _ -> "ERROR")
-  return val
+  return val-}
 
 fsOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno ())
 fsOpen path mode flags = do
   writeErr $ "Opening path " ++ show path
   tree <- (getTree treefile :: IO (Tree TreeValue))
+  return $ Right (){-
   case Tree.lookupData tree path of
     Just _ ->
       case mode of
         ReadOnly -> return $ Right ()
         WriteOnly -> return $ Right ()
         _ -> return $ Left eACCES
-    Nothing -> return $ Left eNOENT
+    Nothing -> return $ Left eNOENT-}
 
 fsRead :: FilePath -> () -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 fsRead path () byteCount offset = do
+  return $ Left eNOSYS {-
   writeErr $ "Reading path " ++ show path
   tree <- (getTree treefile :: IO (Tree TreeValue))
   case Tree.lookupData tree path of
       Nothing -> return $ Left eNOENT
       Just (Data c)  -> return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) c
-      _ -> return $ Left eNOSYS
+      _ -> return $ Left eNOSYS-}
 
 fsWrite :: FilePath -> () -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
 fsWrite path () bytes offset = do
@@ -508,10 +528,11 @@ fsCreateSymlink to from =  do
 
 fsReadSymlink :: FilePath -> IO (Either Errno FilePath)
 fsReadSymlink path =  do
-  tree <- getTree treefile
+  return $ Left eNOENT
+{-tree <- getTree treefile
   case Tree.lookupMeta tree path of
     Just (SymlinkMetadata {target = t}) -> return $ Right t
-    _ -> return $ Left eNOENT
+    _ -> return $ Left eNOENT -}
 
 fsRemoveLink :: FilePath -> IO Errno
 fsRemoveLink path = do
