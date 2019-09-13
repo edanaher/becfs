@@ -167,7 +167,7 @@ Module Tree.
         | ((k', id)::children'') =>
             if leb_key k' k then
               match findChildId children' k with
-              | (pre, (minKey, id'), post) => (app pre [candidate], (minKey, id'), post)
+              | (pre, (minKey, id'), post) => (candidate::pre, (minKey, id'), post)
               end
             else
               ([], (candidate), ((k', id)::children''))
@@ -175,7 +175,13 @@ Module Tree.
     | _ => ([], (invalidKey, 0), []) (* Impossible *)
     end.
 
-  (* They key passed up is the minimum key in the subtree *)
+  Definition splitList {t : Set} (nodes : list (Key * t)) : (list (Key * t) * list (Key * t)):=
+    let splitPoint := Nat.div (List.length nodes) 2 in
+    let front := List.firstn splitPoint nodes in
+    let back := List.skipn splitPoint nodes in
+    (front, back).
+
+
   Fixpoint insertNode {t : Set} (tr : Tree t) (k : Key) (v : t) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
     match tr with
     | Leaf id entries =>
@@ -183,12 +189,10 @@ Module Tree.
         if negb (Nat.leb (List.length newList) max_node_size) then
           match freshIds with
           | (id1::id2::freshIds') =>
-            let splitPoint := Nat.div (List.length newList) 2 in
-            let front := List.firstn splitPoint newList in
-            let back := List.skipn splitPoint newList in
+            let (front, back) := splitList newList in
             let trees := [Leaf id1 front; Leaf id2 back] in
             IWriteSuccess trees [] freshIds'
-          | _ => WriteNeedFreshId 3 (* We need two for the children, plus there'll be at least one new parent.*)
+          | _ => WriteNeedFreshId 2
           end
         else
           match freshIds with
@@ -207,8 +211,17 @@ Module Tree.
                     match freshIds' with
                     | [] => WriteNeedFreshId 1
                     | (id1::freshIds'') =>
-                        IWriteSuccess [(InternalNode id1 (app pre (app (map (fun r => (getNodeFirstKey r, getNodeId r)) rs) post)))]
-                                      (rs ++ ns) freshIds''
+                        let newList := app pre (app (map (fun r => (getNodeFirstKey r, getNodeId r)) rs) post) in
+                        if negb (Nat.leb (List.length newList) max_node_size) then
+                          match freshIds'' with
+                          | (id1::id2::freshIds''') =>
+                            let (front, back) := splitList newList in
+                            let trees := [InternalNode id1 front; InternalNode id2 back] in
+                            IWriteSuccess trees (rs ++ ns) freshIds'''
+                          | _ => WriteNeedFreshId 2
+                          end
+                        else
+                          IWriteSuccess [InternalNode id1 newList] (rs ++ ns) freshIds''
                     end
                 | status => status
                 end
