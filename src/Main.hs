@@ -105,6 +105,23 @@ writeNode tr =
         Tree.InternalNode id _ -> id in
   Store.writeNode "/tmp/becfs" id (runPut $ Tree.serialize tr)
 
+printBtree :: Tree String -> IO ()
+printBtree tr =
+  let aux :: String -> Tree String -> IO ()
+      aux indent tr = case tr of
+        Tree.Leaf id ns -> do
+          flip mapM_ ns (\(key, _) -> putStr $ indent ++ show key ++ "\n")
+        Tree.InternalNode id ns -> do
+          flip mapM_ ns (\(minKey, nodeId) -> do
+              putStr $ indent ++ show nodeId ++ ": " ++ show minKey ++ "\n"
+              bytes <- Store.readNode "/tmp/becfs" nodeId
+              tree' <- return $ runGet Tree.deserialize bytes :: IO (Tree String)
+              aux ("  " ++ indent) tree'
+            )
+  in
+  aux "" tr
+
+
 testBtree :: IO ()
 testBtree =
   let addNode tr n = do
@@ -125,6 +142,22 @@ testBtree =
   tree8 <- addNode tree7 "7"
   tree9 <- addNode tree8 "11"
   tree10 <- addNode tree9 "13"
+  tree11 <- addNode tree10 "14"
+  tree12 <- addNode tree11 "15"
+  tree13 <- addNode tree12 "16"
+  tree14 <- addNode tree13 "17"
+  tree15 <- addNode tree14 "18"
+  tree16 <- addNode tree15 "19"
+  tree17 <- addNode tree16 "20"
+  tree18 <- addNode tree17 "21"
+  tree19 <- addNode tree18 "22"
+  tree20 <- addNode tree19 "23"
+  tree21 <- addNode tree20 "94"
+  tree22 <- addNode tree21 "85"
+  tree23 <- addNode tree22 "76"
+  tree24 <- addNode tree23 "67"
+  tree25 <- addNode tree24 "58"
+  printBtree tree25
   putStr "Success\n"
 
 testStore :: IO ()
