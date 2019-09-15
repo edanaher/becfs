@@ -135,7 +135,7 @@ testBtree =
           Tree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"
           Tree.ReadDoesNotExist -> putStr $ "Read " ++ k ++ " DOESNOTEXIST" ++ "\n"
           Tree.ReadError str -> putStr $ "Read " ++ k ++ " ERROR: " ++ str ++ "\n"
-          Tree.ReadNeedNode nodeId -> putStr $ "Read " ++ k ++ " NEED NODE" ++ show nodeId ++ "\n"
+          Tree.ReadNeedNode nodeId -> putStr $ "Read " ++ k ++ " NEED NODE " ++ show nodeId ++ "\n"
   in do
   tree <- return Tree.empty
   tree1 <- addNode tree "3"
@@ -145,7 +145,8 @@ testBtree =
   readMeta tree3 "/file2"
   readMeta tree3 "/file3"
   readMeta tree3 "/file4"
-{-tree4 <- addNode tree3 "4"
+  tree4 <- addNode tree3 "4"
+  readMeta tree4 "/file1"
   tree5 <- addNode tree4 "1a"
   tree6 <- addNode tree5 "6"
   tree7 <- addNode tree6 "8"
@@ -167,7 +168,11 @@ testBtree =
   tree23 <- addNode tree22 "76"
   tree24 <- addNode tree23 "67"
   tree25 <- addNode tree24 "58"
-  printBtree tree25-}
+  printBtree tree25
+  readMeta tree25 "/file58"
+  readMeta tree25 "/file11"
+  readMeta tree25 "/file94"
+  readMeta tree25 "/file9499"
   putStr "Success\n"
 
 testStore :: IO ()
@@ -196,9 +201,21 @@ insertMeta tr k v =
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
   aux [] [] nextId
 
-lookupMeta :: Binary t => Tree t -> String -> IO (Tree.ReadStatus t)
+lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
 lookupMeta tr k =
-  return $ Tree.lookupMeta tr k
+  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
+      aux tr nodes = do
+        attempt <- return $ Tree.lookupMeta tr k nodes
+        case attempt of
+          Tree.ReadSuccess _ -> return attempt
+          Tree.ReadDoesNotExist -> return attempt
+          Tree.ReadError str -> error $ "Error reading node: " ++ str
+          Tree.ReadNeedNode id -> do
+            bytes <- Store.readNode "/tmp/becfs" id
+            tr' <- return $ (runGet Tree.deserialize bytes)
+            aux tr $ nodes ++ [tr'] 
+  in
+  aux tr []
 
 {-# NOINLINE errlock #-}
 errlock :: MVar unit
