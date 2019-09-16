@@ -16,6 +16,7 @@ deriving instance Show Key
 deriving instance Generic Key
 instance Binary Key
 deriving instance Show a => Show (Tree a)
+deriving instance Show a => Show (WriteStatus a)
 
 instance Binary a => Binary (Tree a) where
   put (Leaf id l) = do
