@@ -191,11 +191,11 @@ testStore = do
   Store.writeNode "/tmp/becfs" 4 (BL.fromStrict $ B.pack "hi there2")
   Store.nextId "/tmp/becfs" >>= print . show
 
-insertMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
-insertMeta tr k v =
-  let --aux :: [Int] -> [Tree t] -> IO (Tree.WriteStatus t)
+iterateOpUntilSuccess :: Binary t => Show t => (Tree t -> String -> t -> [Tree t] -> [Int] -> Tree.WriteStatus t) -> Tree t -> String -> t -> IO (Tree.WriteStatus t)
+iterateOpUntilSuccess op tr k v =
+  let --aux :: [Int] -> [Tree t] -> Int -> IO (Tree.WriteStatus t)
       aux freshIds nodes nextId = do
-        attempt <- return $ Tree.insertMeta tr k v nodes freshIds
+        attempt <- return $ op tr k v nodes freshIds
         putStrLn $ "Adding " ++ show k ++ ": " ++ show attempt
         case attempt of
           Tree.WriteSuccess _ _ -> return attempt
@@ -210,25 +210,13 @@ insertMeta tr k v =
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
   aux [] [] nextId
 
-{- TODO: merge with insertMeta -}
+insertMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
+insertMeta tr k v =
+  iterateOpUntilSuccess Tree.insertMeta tr k v
+
 insertData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertData tr k v =
-  let --aux :: [Int] -> [Tree t] -> IO (Tree.WriteStatus t)
-      aux freshIds nodes nextId = do
-        attempt <- return $ Tree.insertData tr k v nodes freshIds
-        putStrLn $ "Adding " ++ show k ++ ": " ++ show attempt
-        case attempt of
-          Tree.WriteSuccess _ _ -> return attempt
-          Tree.WriteNeedFreshId n -> do
-            aux (freshIds ++ [nextId + i | i <- [0..n-1]]) nodes (nextId + n)
-          Tree.WriteNeedNode id -> do
-            bytes <- Store.readNode "/tmp/becfs" id
-            newNode <- return $ runGet Tree.deserialize bytes
-            aux freshIds (nodes ++ [newNode]) nextId
-          Tree.WriteError err -> error $ "Error inserting meta: " ++ err
-  in do
-  nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
-  aux [] [] nextId
+  iterateOpUntilSuccess Tree.insertData tr k v
 
 lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
 lookupMeta tr k =
@@ -242,7 +230,7 @@ lookupMeta tr k =
           Tree.ReadNeedNode id -> do
             bytes <- Store.readNode "/tmp/becfs" id
             tr' <- return $ (runGet Tree.deserialize bytes)
-            aux tr $ nodes ++ [tr'] 
+            aux tr $ nodes ++ [tr']
   in
   aux tr []
 
