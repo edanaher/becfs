@@ -111,10 +111,12 @@ writeNode tr =
 testFs :: IO ()
 testFs = do
   writeToFile "/file1" (B.pack "This is file1") 0
+  tree <- loadRoot "/tmp/becfs"
+  printBtree "test finished: " tree
 
-printBtree :: Tree String -> IO ()
-printBtree tr =
-  let aux :: String -> Tree String -> IO ()
+printBtree :: String -> Tree t -> IO ()
+printBtree prefix tr =
+  let aux :: String -> Tree t -> IO ()
       aux indent tr = case tr of
         Tree.Leaf id ns -> do
           flip mapM_ ns (\(key, _) -> putStr $ indent ++ show key ++ "\n")
@@ -126,7 +128,7 @@ printBtree tr =
               aux ("  " ++ indent) tree'
             )
   in
-  aux "" tr
+  aux prefix tr
 
 testBtree :: IO ()
 testBtree =
@@ -176,7 +178,7 @@ testBtree =
   tree23 <- addNode tree22 "76"
   tree24 <- addNode tree23 "67"
   tree25 <- addNode tree24 "58"
-  printBtree tree25
+  printBtree "" tree25
   readMeta tree25 "/file58"
   readMeta tree25 "/file11"
   readMeta tree25 "/file94"
@@ -196,7 +198,7 @@ iterateOpUntilSuccess op tr k v =
   let --aux :: [Int] -> [Tree t] -> Int -> IO (Tree.WriteStatus t)
       aux freshIds nodes nextId = do
         attempt <- return $ op tr k v nodes freshIds
-        putStrLn $ "Adding " ++ show k ++ ": " ++ show attempt
+        --putStrLn $ "Adding " ++ show k ++ ": " ++ show attempt
         case attempt of
           Tree.WriteSuccess _ _ -> return attempt
           Tree.WriteNeedFreshId n -> do
@@ -305,7 +307,7 @@ updateTreeRetIO op = do
   takeLock
   root_bytes <- Store.readRoot "/tmp/becfs"
   tree <- return $ (runGet Tree.deserialize root_bytes)
-  putStrLn $ "Read tree " ++ show tree
+  --putStrLn $ "Read tree " ++ show tree
   (status, res) <- op tree
   (tree', nodes) <- case status of
       Tree.WriteSuccess root nodes -> return (root, nodes)
@@ -332,6 +334,11 @@ getTree treeFile = do
       releaseLock
       return tree
 
+loadRoot :: String -> IO (Tree TreeValue)
+loadRoot path = do
+  root_bytes <- Store.readRoot path
+  return $ (runGet Tree.deserialize root_bytes)
+
 fileContents :: FilePath -> IO (Maybe B.ByteString)
 fileContents path = do
   return $ Just B.empty{-
@@ -351,8 +358,9 @@ createFileMeta path =  do
   metadata <- emptyFileMetadata
   writeErr $ "  Created metadata for " ++ show path
   updateTreeIO $ \t -> insertMeta t path metadata
-  tree <- getTree treefile :: IO (Tree TreeValue)
-  writeErr $ "  Now have tree " ++ show tree
+  tree <- loadRoot "/tmp/becfs"
+  writeErr $ "  Now have tree: " ++ show tree
+  printBtree "createFileMeta: " tree
 
 ensureFileExists :: FilePath -> IO ()
 ensureFileExists path = do
