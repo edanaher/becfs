@@ -218,6 +218,18 @@ insertData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatu
 insertData tr k v =
   iterateOpUntilSuccess Tree.insertData tr k v
 
+updateMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
+updateMeta tr k v = do
+  Tree.WriteSuccess rt ns <- iterateOpUntilSuccess (\tr k v ns ids -> Tree.removeMeta tr k ns ids) tr k v
+  Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insertMeta rt k v
+  return $ Tree.WriteSuccess rt' (rt:ns ++ ns')
+
+updateData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
+updateData tr k v = do
+  Tree.WriteSuccess rt ns <- iterateOpUntilSuccess (\tr k v ns ids -> Tree.removeData tr k ns ids) tr k v
+  Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insertData rt k v
+  return $ Tree.WriteSuccess rt' (rt:ns ++ ns')
+
 lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
 lookupMeta tr k =
   let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
@@ -328,11 +340,11 @@ fileContents path = do
 
 removeFile :: FilePath -> IO ()
 removeFile path = do
-  updateTree (\t -> Tree.removeMeta t path :: Tree.WriteStatus TreeValue)
+  updateTree (\t -> Tree.removeMeta t path [] [] :: Tree.WriteStatus TreeValue)
 
 removeDir :: FilePath -> IO ()
 removeDir path = do
-  updateTree (\t -> Tree.removeMeta t path :: Tree.WriteStatus TreeValue)
+  updateTree (\t -> Tree.removeMeta t path [] [] :: Tree.WriteStatus TreeValue)
 
 createFileMeta :: FilePath -> IO ()
 createFileMeta path =  do
@@ -361,8 +373,7 @@ writeToFile path contents offset' = do
           Nothing -> baseFileMetadata-}
         length' = max (B.length contents + offset) (filesize metadata)
     in
-    {- TODO: This should be updateMeta -}
-    insertMeta t path (metadata { filesize = length' }))
+    updateMeta t path (metadata { filesize = length' }))
   updateTreeIO (\t ->
     let oldcontents = B.empty{-case Tree.lookupData t path of
           Just (Data d) -> d
@@ -373,8 +384,7 @@ writeToFile path contents offset' = do
                   then prefix
                   else B.append prefix $ By.replicate (offset - B.length prefix) (fromIntegral 0)
     in
-    {- TODO: This should be updateData -}
-    insertData t path (Data $ B.concat [prefix', contents, suffix]))
+    updateData t path (Data $ B.concat [prefix', contents, suffix]))
 
 moveFile :: FilePath -> FilePath -> IO ()
 moveFile from to = do
@@ -384,7 +394,7 @@ moveFile from to = do
             Just m -> m
             Nothing -> baseFileMetadata-}
       in
-      case Tree.removeMeta t from of
+      case Tree.removeMeta t from [] [] of
         Tree.WriteSuccess t' _ -> Tree.insertMeta t' to metadata [] []
         _ -> error "Didn't get WriteSuccess!")
   updateTree (\t ->
@@ -392,7 +402,7 @@ moveFile from to = do
             Just b -> b
             Nothing -> Data $ B.pack "Lost contents!"-}
       in
-      case Tree.removeData t from of
+      case Tree.removeData t from [] [] of
         Tree.WriteSuccess t' _ -> Tree.insertData t' to contents [] []
         _ -> error "Didn't get WriteSuccess!")
 

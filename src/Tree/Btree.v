@@ -288,11 +288,13 @@ Module Tree.
   Definition insertMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := insert tr (Meta s) v.
   Definition insertData {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := insert tr (Data s) v.
 
-  Fixpoint remove {t : Set} (tr : Tree t) (k : Key) : WriteStatus t :=
-    WriteSuccess empty [].
-    (*match tr with
-    | Leaf vs => Leaf (filter (fun kv' => match kv' with pair k' _ => negb (key_beq k k') end) vs)
-    | InternalNode trs => InternalNode ((fix removeList trs :=
+  Fixpoint remove {t : Set} (tr : Tree t) (k : Key) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
+    match tr with
+    | Leaf id vs =>
+        let tr' := Leaf id (filter (fun kv' => match kv' with pair k' _ => negb (key_beq k k') end) vs) in
+        WriteSuccess tr' []
+    | InternalNode id trs => WriteError "Can't remove from internal nodes yet"
+        (*InternalNode ((fix removeList trs :=
         match trs with
         | [] => []
         | (k', tr')::trs' =>
@@ -305,20 +307,21 @@ Module Tree.
             else
               (k', tr')::removeList trs'
         end
-      ) trs)
-    end.*)
-
-  Definition removeMeta {t : Set} (tr : Tree t) (s : string) : Tree.WriteStatus t := remove tr (Meta s).
-  Definition removeData {t : Set} (tr : Tree t) (s : string) : Tree.WriteStatus t := remove tr (Data s).
-
-  Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) (freshIds : list NodeId) : WriteStatus t :=
-    match remove tr k with
-    | WriteSuccess root nodes => insert root k v [] []
-    | _ => WriteSuccess empty []
+      ) trs)*)
     end.
 
-  Definition updateMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := update tr (Meta s) v.
-  Definition updateData {t : Set} (tr : Tree t) (s : string) (v : t) : list NodeId -> WriteStatus t := update tr (Data s) v.
+  Definition removeMeta {t : Set} (tr : Tree t) (s : string) : list (Tree t) -> list NodeId -> Tree.WriteStatus t := remove tr (Meta s).
+  Definition removeData {t : Set} (tr : Tree t) (s : string) : list (Tree t) -> list NodeId -> Tree.WriteStatus t := remove tr (Data s).
+
+  Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
+    WriteSuccess empty [].
+    (*match remove tr k with
+    | WriteSuccess root nodes => insert root k v [] []
+    | _ => WriteSuccess empty []
+    end.*)
+
+  Definition updateMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := update tr (Meta s) v.
+  Definition updateData {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := update tr (Data s) v.
 
   Fixpoint lookup {t : Set} (tr : Tree t) (k : Key) (nodes : list (Tree t))  : ReadStatus t :=
     match (*trace ("Looking up in node" ++ show (getNodeId tr))*) tr with
