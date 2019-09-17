@@ -111,6 +111,7 @@ writeNode tr =
 testFs :: IO ()
 testFs = do
   writeToFile "/file1" (B.pack "This is file1") 0
+  writeToFile "/file2" (B.pack "This is file2") 0
   tree <- loadRoot "/tmp/becfs"
   printBtree "test finished: " tree
 
@@ -124,8 +125,8 @@ printBtree prefix tr =
           flip mapM_ ns (\(minKey, nodeId) -> do
               putStr $ indent ++ show nodeId ++ ": " ++ show minKey ++ "\n"
               bytes <- Store.readNode "/tmp/becfs" nodeId
-              tree' <- return $ runGet Tree.deserialize bytes :: IO (Tree String)
-              aux ("  " ++ indent) tree'
+              tree' <- return $ runGet Tree.deserialize $ bytes :: IO (Tree TreeValue)
+              aux (indent ++ "  ") tree'
             )
   in
   aux prefix tr
@@ -178,7 +179,7 @@ testBtree =
   tree23 <- addNode tree22 "76"
   tree24 <- addNode tree23 "67"
   tree25 <- addNode tree24 "58"
-  printBtree "" tree25
+  --printBtree "" tree25
   readMeta tree25 "/file58"
   readMeta tree25 "/file11"
   readMeta tree25 "/file94"
@@ -307,13 +308,15 @@ updateTreeRetIO op = do
   takeLock
   root_bytes <- Store.readRoot "/tmp/becfs"
   tree <- return $ (runGet Tree.deserialize root_bytes)
-  --putStrLn $ "Read tree " ++ show tree
   (status, res) <- op tree
   (tree', nodes) <- case status of
       Tree.WriteSuccess root nodes -> return (root, nodes)
       _ -> error "Didn't get writesuccess"
   root_bytes <- return $ runPut $ Tree.serialize tree'
   Store.writeRoot "/tmp/becfs" (Tree.getNodeId tree') root_bytes
+  flip mapM_ nodes $ \node -> do
+      bytes <- return $ runPut $ Tree.serialize node
+      Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
   releaseLock
   return res
 
@@ -360,7 +363,6 @@ createFileMeta path =  do
   updateTreeIO $ \t -> insertMeta t path metadata
   tree <- loadRoot "/tmp/becfs"
   writeErr $ "  Now have tree: " ++ show tree
-  printBtree "createFileMeta: " tree
 
 ensureFileExists :: FilePath -> IO ()
 ensureFileExists path = do
