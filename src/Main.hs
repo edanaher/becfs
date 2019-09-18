@@ -27,6 +27,8 @@ import qualified Tree.Btree as Tree
 import Tree.Btree as Tree (Tree)
 import qualified Store.Layered as Store
 
+deriving instance Show Errno
+
 treefile = "/tmp/becfs-tree"
 treefile2 = "/tmp/becfs-tree.new"
 
@@ -123,6 +125,8 @@ testFs = do
   writeToFile "/file54" (B.pack "This is file54") 0
   writeToFile "/file55" (B.pack "This is file55") 0
   printBtreeFromDisk "test finished: "
+  fsOpen "/file55" ReadOnly defaultFileFlags >>= print
+  fsOpen "/filedoesnotexist" ReadOnly defaultFileFlags >>= print
 
 printBtree :: String -> Tree t -> IO ()
 printBtree prefix tr =
@@ -267,6 +271,22 @@ lookupMeta tr k =
   let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
       aux tr nodes = do
         attempt <- return $ Tree.lookupMeta tr k nodes
+        case attempt of
+          Tree.ReadSuccess _ -> return attempt
+          Tree.ReadDoesNotExist -> return attempt
+          Tree.ReadError str -> error $ "Error reading node: " ++ str
+          Tree.ReadNeedNode id -> do
+            bytes <- Store.readNode "/tmp/becfs" id
+            tr' <- return $ (runGet Tree.deserialize bytes)
+            aux tr $ nodes ++ [tr']
+  in
+  aux tr []
+
+lookupData :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
+lookupData tr k =
+  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
+      aux tr nodes = do
+        attempt <- return $ Tree.lookupData tr k nodes
         case attempt of
           Tree.ReadSuccess _ -> return attempt
           Tree.ReadDoesNotExist -> return attempt
@@ -591,15 +611,15 @@ fsReadDir dir = do
 fsOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno ())
 fsOpen path mode flags = do
   writeErr $ "Opening path " ++ show path
-  tree <- (getTree treefile :: IO (Tree TreeValue))
-  return $ Right (){-
-  case Tree.lookupData tree path of
-    Just _ ->
+  tree <- fetchRootNode :: IO (Tree TreeValue)
+  lookupData tree path >>= \r -> case r of
+    Tree.ReadSuccess _ ->
       case mode of
         ReadOnly -> return $ Right ()
         WriteOnly -> return $ Right ()
         _ -> return $ Left eACCES
-    Nothing -> return $ Left eNOENT-}
+    Tree.ReadDoesNotExist -> return $ Left eNOENT
+    status -> error $ "Bad return from fsOpen: " ++ show status
 
 fsRead :: FilePath -> () -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 fsRead path () byteCount offset = do
