@@ -18,6 +18,11 @@ Module Tree.
   | Meta : string -> Key
   | Data : string -> Key.
 
+  Definition showKey (k  : Key) : string := match k with
+  | Meta s => "Meta " ++ s
+  | Data s => "Data " ++ s
+  end.
+
   Inductive Tree (t : Set) : Set :=
   | InternalNode : NodeId -> list (Key * NodeId) -> Tree t
   | Leaf : NodeId -> list (Key * t) -> Tree t.
@@ -288,26 +293,55 @@ Module Tree.
   Definition insertMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := insert tr (Meta s) v.
   Definition insertData {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := insert tr (Data s) v.
 
-  Fixpoint remove {t : Set} (tr : Tree t) (k : Key) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
+  (* TODO: combine small nodes with neighbors *)
+  Fixpoint removeNode {t : Set} (tr : Tree t) (k : Key) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
     match tr with
     | Leaf id vs =>
         let tr' := Leaf id (filter (fun kv' => match kv' with pair k' _ => negb (key_beq k k') end) vs) in
-        WriteSuccess tr' []
-    | InternalNode id trs => WriteError "Can't remove from internal nodes yet"
-        (*InternalNode ((fix removeList trs :=
-        match trs with
-        | [] => []
-        | (k', tr')::trs' =>
-            if leb_option_key k k' then
-              let tr'' := remove tr' k in
-              if option_key_beq k k' then
-                (Some (lastKey tr''), tr'')::trs' (* Fix k'*)
+        IWriteSuccess [tr'] []  freshIds
+    | InternalNode id children =>
+        match findChildId children k with
+        | (pre, (minKey, childId), post) =>
+          match nodes with
+          | [] => WriteNeedNode childId
+          | (child::nodes') =>
+              if Nat.eqb (getNodeId child) childId then
+                match removeNode child k nodes' freshIds with
+                | IWriteSuccess rs ns freshIds' =>
+                    match freshIds' with
+                    | [] => WriteNeedFreshId 1
+                    | (id1::freshIds'') =>
+                        let newList := app pre (app (map (fun r => (getNodeFirstKey r, getNodeId r)) rs) post) in
+                        if negb (Nat.leb (List.length newList) max_node_size) then
+                          match freshIds'' with
+                          | (id1::id2::freshIds''') =>
+                            let (front, back) := splitList newList in
+                            let trees := [InternalNode id1 front; InternalNode id2 back] in
+                            IWriteSuccess trees (rs ++ ns) freshIds'''
+                          | _ => WriteNeedFreshId 2
+                          end
+                        else
+                          IWriteSuccess [InternalNode id1 newList] (rs ++ ns) freshIds''
+                    end
+                | status => status
+                end
               else
-                (k', tr'')::trs' (* Fix k'*)
-            else
-              (k', tr')::removeList trs'
+                WriteError ("Wrong child next in list " ++ show id ++ "/" ++ show childId)
+          end
         end
-      ) trs)*)
+    end.
+
+  Definition remove {t : Set} (tr : Tree t) (k : Key) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
+    match removeNode tr k nodes freshIds with
+    | IWriteSuccess [] nodes _ => WriteError "No roots provided"
+    | WriteSuccess _ _ => WriteError "External WriteSuccess provided by removeNode"
+    | IWriteSuccess [root] nodes [] => WriteSuccess root nodes
+    | IWriteSuccess [root1; root2] nodes [] => WriteNeedFreshId 1 (* Impossible? *)
+    | IWriteSuccess [root1; root2] nodes [id1] => (* Impossible? *)
+            WriteSuccess (InternalNode id1 [(getNodeFirstKey root1, getNodeId root1); (getNodeFirstKey root2, getNodeId root2)])
+                         (root1::root2::nodes)
+    | IWriteSuccess (root::_) nodes _ => WriteError "Extra freshIds provided"
+    | x => x
     end.
 
   Definition removeMeta {t : Set} (tr : Tree t) (s : string) : list (Tree t) -> list NodeId -> Tree.WriteStatus t := remove tr (Meta s).

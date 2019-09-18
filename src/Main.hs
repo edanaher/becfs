@@ -112,6 +112,16 @@ testFs :: IO ()
 testFs = do
   writeToFile "/file1" (B.pack "This is file1") 0
   writeToFile "/file2" (B.pack "This is file2") 0
+  writeToFile "/file3" (B.pack "This is file3") 0
+  writeToFile "/file1a" (B.pack "This is file1a") 0
+  writeToFile "/file2b" (B.pack "This is file2b") 0
+  writeToFile "/file99" (B.pack "This is file99") 0
+  writeToFile "/file94" (B.pack "This is file94") 0
+  writeToFile "/file90" (B.pack "This is file90") 0
+  writeToFile "/file50" (B.pack "This is file50") 0
+  writeToFile "/file58" (B.pack "This is file58") 0
+  writeToFile "/file54" (B.pack "This is file54") 0
+  writeToFile "/file55" (B.pack "This is file55") 0
   tree <- loadRoot "/tmp/becfs"
   printBtree "test finished: " tree
 
@@ -224,13 +234,28 @@ insertData tr k v =
 updateMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 updateMeta tr k v = do
   Tree.WriteSuccess rt ns <- iterateOpUntilSuccess (\tr k v ns ids -> Tree.removeMeta tr k ns ids) tr k v
+  tree <- loadRoot "/tmp/becfs"
+
+  root_bytes <- return $ runPut $ Tree.serialize rt
+  Store.writeRoot "/tmp/becfs" (Tree.getNodeId rt) root_bytes
+  flip mapM_ ns $ \node -> do
+      bytes <- return $ runPut $ Tree.serialize node
+      Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
+
   Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insertMeta rt k v
   return $ Tree.WriteSuccess rt' (rt:ns ++ ns')
 
 updateData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 updateData tr k v = do
   Tree.WriteSuccess rt ns <- iterateOpUntilSuccess (\tr k v ns ids -> Tree.removeData tr k ns ids) tr k v
+
+  root_bytes <- return $ runPut $ Tree.serialize rt
+  Store.writeRoot "/tmp/becfs" (Tree.getNodeId rt) root_bytes
+  flip mapM_ ns $ \node -> do
+      bytes <- return $ runPut $ Tree.serialize node
+      Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
   Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insertData rt k v
+
   return $ Tree.WriteSuccess rt' (rt:ns ++ ns')
 
 lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
@@ -359,10 +384,8 @@ removeDir path = do
 createFileMeta :: FilePath -> IO ()
 createFileMeta path =  do
   metadata <- emptyFileMetadata
-  writeErr $ "  Created metadata for " ++ show path
+  --writeErr $ "  Created metadata for " ++ show path
   updateTreeIO $ \t -> insertMeta t path metadata
-  tree <- loadRoot "/tmp/becfs"
-  writeErr $ "  Now have tree: " ++ show tree
 
 ensureFileExists :: FilePath -> IO ()
 ensureFileExists path = do
@@ -384,6 +407,7 @@ writeToFile path contents offset' = do
         length' = max (B.length contents + offset) (filesize metadata)
     in
     updateMeta t path (metadata { filesize = length' }))
+  tree <- loadRoot "/tmp/becfs"
   updateTreeIO (\t ->
     let oldcontents = B.empty{-case Tree.lookupData t path of
           Just (Data d) -> d
