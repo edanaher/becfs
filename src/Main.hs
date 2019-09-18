@@ -122,8 +122,7 @@ testFs = do
   writeToFile "/file58" (B.pack "This is file58") 0
   writeToFile "/file54" (B.pack "This is file54") 0
   writeToFile "/file55" (B.pack "This is file55") 0
-  tree <- loadRoot "/tmp/becfs"
-  printBtree "test finished: " tree
+  printBtreeFromDisk "test finished: "
 
 printBtree :: String -> Tree t -> IO ()
 printBtree prefix tr =
@@ -140,6 +139,11 @@ printBtree prefix tr =
             )
   in
   aux prefix tr
+
+printBtreeFromDisk :: String -> IO ()
+printBtreeFromDisk prefix = do
+  tree <- fetchRootNode :: IO (Tree TreeValue)
+  printBtree prefix tree
 
 testBtree :: IO ()
 testBtree =
@@ -328,20 +332,28 @@ updateTree :: Show a => Binary a => (Tree a -> Tree.WriteStatus a) -> IO ()
 updateTree op = do
   updateTreeRet (\t -> (op t, ()))
 
-updateTreeRetIO :: Show t => Binary t => (Tree t -> IO ((Tree.WriteStatus t), r)) -> IO r
-updateTreeRetIO op = do
-  takeLock
+fetchRootNode :: Show t => Binary t => IO (Tree t)
+fetchRootNode = do
   root_bytes <- Store.readRoot "/tmp/becfs"
-  tree <- return $ (runGet Tree.deserialize root_bytes)
-  (status, res) <- op tree
-  (tree', nodes) <- case status of
-      Tree.WriteSuccess root nodes -> return (root, nodes)
-      _ -> error "Didn't get writesuccess"
-  root_bytes <- return $ runPut $ Tree.serialize tree'
-  Store.writeRoot "/tmp/becfs" (Tree.getNodeId tree') root_bytes
+  return $ (runGet Tree.deserialize root_bytes)
+
+saveNodeUpdates :: Binary t => Show t => Tree.WriteStatus t -> IO ()
+saveNodeUpdates (Tree.WriteSuccess root nodes) = do
+  root_bytes <- return $ runPut $ Tree.serialize root
+  Store.writeRoot "/tmp/becfs" (Tree.getNodeId root) root_bytes
   flip mapM_ nodes $ \node -> do
       bytes <- return $ runPut $ Tree.serialize node
       Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
+
+saveNodeUpdates status = error $ "Didn't get writesuccess: " ++ show status
+
+
+updateTreeRetIO :: Show t => Binary t => (Tree t -> IO ((Tree.WriteStatus t), r)) -> IO r
+updateTreeRetIO op = do
+  takeLock
+  tree <- fetchRootNode
+  (status, res) <- op tree
+  saveNodeUpdates status
   releaseLock
   return res
 
