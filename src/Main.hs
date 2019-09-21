@@ -127,6 +127,9 @@ testFs = do
   printBtreeFromDisk "test finished: "
   fsOpen "/file55" ReadOnly defaultFileFlags >>= print
   fsOpen "/filedoesnotexist" ReadOnly defaultFileFlags >>= print
+  print =<< fsRead  "/file55" () 100 0
+  print =<< fsRead  "/file3" () 100 0
+  print =<< fsRead  "/file3doesnotexist" () 100 0
 
 printBtree :: String -> Tree t -> IO ()
 printBtree prefix tr =
@@ -623,13 +626,13 @@ fsOpen path mode flags = do
 
 fsRead :: FilePath -> () -> ByteCount -> FileOffset -> IO (Either Errno B.ByteString)
 fsRead path () byteCount offset = do
-  return $ Left eNOSYS {-
   writeErr $ "Reading path " ++ show path
-  tree <- (getTree treefile :: IO (Tree TreeValue))
-  case Tree.lookupData tree path of
-      Nothing -> return $ Left eNOENT
-      Just (Data c)  -> return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) c
-      _ -> return $ Left eNOSYS-}
+  tree <- fetchRootNode :: IO (Tree TreeValue)
+  result <- lookupData tree path
+  case result of
+      Tree.ReadSuccess (Data c) -> return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) c
+      Tree.ReadDoesNotExist -> return $ Left eNOENT
+      _ -> return $ Left eNOSYS
 
 fsWrite :: FilePath -> () -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
 fsWrite path () bytes offset = do
