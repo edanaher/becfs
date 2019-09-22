@@ -290,9 +290,6 @@ Module Tree.
     | x => x
     end.
 
-  Definition insertMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := insert tr (Meta s) v.
-  Definition insertData {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := insert tr (Data s) v.
-
   (* TODO: combine small nodes with neighbors *)
   Fixpoint removeNode {t : Set} (tr : Tree t) (k : Key) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
     match tr with
@@ -344,9 +341,6 @@ Module Tree.
     | x => x
     end.
 
-  Definition removeMeta {t : Set} (tr : Tree t) (s : string) : list (Tree t) -> list NodeId -> Tree.WriteStatus t := remove tr (Meta s).
-  Definition removeData {t : Set} (tr : Tree t) (s : string) : list (Tree t) -> list NodeId -> Tree.WriteStatus t := remove tr (Data s).
-
   Definition update {t : Set} (tr : Tree t) (k : Key) (v : t) (nodes : list (Tree t)) (freshIds : list NodeId) : WriteStatus t :=
     WriteSuccess empty [].
     (*match remove tr k with
@@ -388,9 +382,6 @@ Module Tree.
         end
       ) ks
     end.
-
-  Definition lookupMeta {t : Set} (tr : Tree t) (s : string) : (list (Tree t)) -> ReadStatus t := lookup tr (Meta s).
-  Definition lookupData {t : Set} (tr : Tree t) (s : string) : (list (Tree t)) -> ReadStatus t := lookup tr (Data s).
 
   Fixpoint children {t : Set} (tr : Tree t) (s : string) : list Key :=
     [].

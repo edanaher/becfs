@@ -215,7 +215,7 @@ testStore = do
   Store.writeNode "/tmp/becfs" 4 (BL.fromStrict $ B.pack "hi there2")
   Store.nextId "/tmp/becfs" >>= print . show
 
-iterateOpUntilSuccess :: Binary t => Show t => (Tree t -> String -> t -> [Tree t] -> [Int] -> Tree.WriteStatus t) -> Tree t -> String -> t -> IO (Tree.WriteStatus t)
+iterateOpUntilSuccess :: Binary t => Show t => (Tree t -> Tree.Key -> t -> [Tree t] -> [Int] -> Tree.WriteStatus t) -> Tree t -> Tree.Key -> t -> IO (Tree.WriteStatus t)
 iterateOpUntilSuccess op tr k v =
   let --aux :: [Int] -> [Tree t] -> Int -> IO (Tree.WriteStatus t)
       aux freshIds nodes nextId = do
@@ -236,15 +236,15 @@ iterateOpUntilSuccess op tr k v =
 
 insertMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertMeta tr k v =
-  iterateOpUntilSuccess Tree.insertMeta tr k v
+  iterateOpUntilSuccess Tree.insert tr (Tree.Meta k) v
 
 insertData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertData tr k v =
-  iterateOpUntilSuccess Tree.insertData tr k v
+  iterateOpUntilSuccess Tree.insert tr (Tree.Data k) v
 
-updateMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
-updateMeta tr k v = do
-  Tree.WriteSuccess rt ns <- iterateOpUntilSuccess (\tr k v ns ids -> Tree.removeMeta tr k ns ids) tr k v
+updateNode :: Binary t => Show t => Tree t -> Tree.Key -> t -> IO (Tree.WriteStatus t)
+updateNode tr k v = do
+  Tree.WriteSuccess rt ns <- iterateOpUntilSuccess (\tr k v ns ids -> Tree.remove tr k ns ids) tr k v
   tree <- loadRoot "/tmp/becfs"
 
   root_bytes <- return $ runPut $ Tree.serialize rt
@@ -253,53 +253,37 @@ updateMeta tr k v = do
       bytes <- return $ runPut $ Tree.serialize node
       Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
 
-  Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insertMeta rt k v
+  Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insert rt k v
   return $ Tree.WriteSuccess rt' (rt:ns ++ ns')
+
+updateMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
+updateMeta tr k v = updateNode tr (Tree.Meta k) v
 
 updateData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
-updateData tr k v = do
-  Tree.WriteSuccess rt ns <- iterateOpUntilSuccess (\tr k v ns ids -> Tree.removeData tr k ns ids) tr k v
+updateData tr k v = updateNode tr (Tree.Data k) v
 
-  root_bytes <- return $ runPut $ Tree.serialize rt
-  Store.writeRoot "/tmp/becfs" (Tree.getNodeId rt) root_bytes
-  flip mapM_ ns $ \node -> do
-      bytes <- return $ runPut $ Tree.serialize node
-      Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
-  Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insertData rt k v
 
-  return $ Tree.WriteSuccess rt' (rt:ns ++ ns')
+lookupNode :: Binary t => Show t => Tree t -> Tree.Key -> IO (Tree.ReadStatus t)
+lookupNode tr k =
+  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
+      aux tr nodes = do
+        attempt <- return $ Tree.lookup tr k nodes
+        case attempt of
+          Tree.ReadSuccess _ -> return attempt
+          Tree.ReadDoesNotExist -> return attempt
+          Tree.ReadError str -> error $ "Error reading node: " ++ str
+          Tree.ReadNeedNode id -> do
+            bytes <- Store.readNode "/tmp/becfs" id
+            tr' <- return $ (runGet Tree.deserialize bytes)
+            aux tr $ nodes ++ [tr']
+  in
+  aux tr []
 
 lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
-lookupMeta tr k =
-  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
-      aux tr nodes = do
-        attempt <- return $ Tree.lookupMeta tr k nodes
-        case attempt of
-          Tree.ReadSuccess _ -> return attempt
-          Tree.ReadDoesNotExist -> return attempt
-          Tree.ReadError str -> error $ "Error reading node: " ++ str
-          Tree.ReadNeedNode id -> do
-            bytes <- Store.readNode "/tmp/becfs" id
-            tr' <- return $ (runGet Tree.deserialize bytes)
-            aux tr $ nodes ++ [tr']
-  in
-  aux tr []
+lookupMeta tr k = lookupNode tr (Tree.Meta k)
 
 lookupData :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
-lookupData tr k =
-  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
-      aux tr nodes = do
-        attempt <- return $ Tree.lookupData tr k nodes
-        case attempt of
-          Tree.ReadSuccess _ -> return attempt
-          Tree.ReadDoesNotExist -> return attempt
-          Tree.ReadError str -> error $ "Error reading node: " ++ str
-          Tree.ReadNeedNode id -> do
-            bytes <- Store.readNode "/tmp/becfs" id
-            tr' <- return $ (runGet Tree.deserialize bytes)
-            aux tr $ nodes ++ [tr']
-  in
-  aux tr []
+lookupData tr k = lookupNode tr (Tree.Data k)
 
 {-# NOINLINE errlock #-}
 errlock :: MVar unit
@@ -410,17 +394,20 @@ fileContents path = do
 
 removeFile :: FilePath -> IO ()
 removeFile path = do
-  updateTree (\t -> Tree.removeMeta t path [] [] :: Tree.WriteStatus TreeValue)
+  putStrLn "TODO"
+{-updateTree (\t -> Tree.removeMeta t path [] [] :: Tree.WriteStatus TreeValue)-}
 
 removeDir :: FilePath -> IO ()
 removeDir path = do
-  updateTree (\t -> Tree.removeMeta t path [] [] :: Tree.WriteStatus TreeValue)
+  putStrLn "TODO"
+{-updateTree (\t -> Tree.removeMeta t path [] [] :: Tree.WriteStatus TreeValue)-}
 
 createFileMeta :: FilePath -> IO ()
 createFileMeta path =  do
   metadata <- emptyFileMetadata
   --writeErr $ "  Created metadata for " ++ show path
-  updateTreeIO $ \t -> insertMeta t path metadata
+  putStrLn "TODO"
+  --updateTreeIO $ \t -> insertMeta t path metadata
 
 ensureFileExists :: FilePath -> IO ()
 ensureFileExists path = do
@@ -458,7 +445,8 @@ writeToFile path contents offset' = do
 moveFile :: FilePath -> FilePath -> IO ()
 moveFile from to = do
   baseFileMetadata <- emptyFileMetadata
-  updateTree (\t ->
+  putStrLn "TODO"
+{-updateTree (\t ->
       let metadata = baseFileMetadata{-case Tree.lookupMeta t from of
             Just m -> m
             Nothing -> baseFileMetadata-}
@@ -473,14 +461,14 @@ moveFile from to = do
       in
       case Tree.removeData t from [] [] of
         Tree.WriteSuccess t' _ -> Tree.insertData t' to contents [] []
-        _ -> error "Didn't get WriteSuccess!")
+        _ -> error "Didn't get WriteSuccess!")-}
 
 createSymlink :: FilePath -> FilePath -> IO Errno
 createSymlink from to = do
   -- TODO: Error checking
   now <- getNow
-  updateTree (\t ->
-    Tree.insertMeta t from (SymlinkMetadata { target = to, mtime = now }) [] [])
+{-updateTree (\t ->
+    Tree.insertMeta t from (SymlinkMetadata { target = to, mtime = now }) [] [])-}
   return eOK
 
 setPerms :: FilePath -> FileMode -> IO Errno
@@ -651,8 +639,8 @@ fsCreateDevice path tp mode id = case tp of
 fsCreateDirectory :: FilePath -> FileMode -> IO Errno
 fsCreateDirectory path mode =  do
   writeErr $ "Creating directory " ++ show path
-  metadata <- emptyDirMetadata
-  updateTree (\t -> Tree.insertMeta t path metadata [] [])
+{-metadata <- emptyDirMetadata
+  updateTree (\t -> Tree.insertMeta t path metadata [] [])-}
   return eOK
 
 fsCreateSymlink :: FilePath -> FilePath -> IO Errno
