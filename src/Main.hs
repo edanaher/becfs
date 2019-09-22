@@ -113,22 +113,22 @@ writeNode tr =
 testFs :: IO ()
 testFs = do
   writeToFile "/file1" (B.pack "This is file1") 0
-  writeToFile "/file2" (B.pack "This is file2") 0
-  writeToFile "/file3" (B.pack "This is file3") 0
-  writeToFile "/file1a" (B.pack "This is file1a") 0
+  writeToFile "/dir1/file2" (B.pack "This is file2") 0
+  writeToFile "/dir2/dir2/file3" (B.pack "This is file3") 0
+  writeToFile "/dir1/file1a" (B.pack "This is file1a") 0
   writeToFile "/file2b" (B.pack "This is file2b") 0
-  writeToFile "/file99" (B.pack "This is file99") 0
-  writeToFile "/file94" (B.pack "This is file94") 0
-  writeToFile "/file90" (B.pack "This is file90") 0
-  writeToFile "/file50" (B.pack "This is file50") 0
-  writeToFile "/file58" (B.pack "This is file58") 0
-  writeToFile "/file54" (B.pack "This is file54") 0
-  writeToFile "/file55" (B.pack "This is file55") 0
+  writeToFile "/dir1/file99" (B.pack "This is file99") 0
+  writeToFile "/dir1/file94" (B.pack "This is file94") 0
+  writeToFile "/dir2/dir2/file90" (B.pack "This is file90") 0
+  writeToFile "/dir1/file50" (B.pack "This is file50") 0
+  writeToFile "/dir3/file58" (B.pack "This is file58") 0
+  writeToFile "/dir2/dir2/file54" (B.pack "This is file54") 0
+  writeToFile "/dir3/file55" (B.pack "This is file55") 0
   printBtreeFromDisk "test finished: "
-  fsOpen "/file55" ReadOnly defaultFileFlags >>= print
+  fsOpen "/dir3/file55" ReadOnly defaultFileFlags >>= print
   fsOpen "/filedoesnotexist" ReadOnly defaultFileFlags >>= print
-  print =<< fsRead  "/file55" () 100 0
-  print =<< fsRead  "/file3" () 100 0
+  print =<< fsRead  "/dir3/file55" () 100 0
+  print =<< fsRead  "/dir2/file3" () 100 0
   print =<< fsRead  "/file3doesnotexist" () 100 0
 
 printBtree :: String -> Tree t -> IO ()

@@ -99,9 +99,19 @@ Module Tree.
     | Data s => Data (op s)
     end.
 
+  Fixpoint count_slashes (path : string) : nat :=
+    match path with
+    | EmptyString => 0
+    | String c path' => (if Ascii.eqb c "/" then 1 else 0) + count_slashes path'
+    end.
+
   Definition leb_key (a : Key) (b : Key) : bool :=
     match a, b with
-    | Meta s1, Meta s2 => if string_leb s1 s2 then true else false
+    | Meta s1, Meta s2 => match Nat.compare (count_slashes s1) (count_slashes s2) with
+                          | Lt => true
+                          | Gt => false
+                          | Eq => string_leb s1 s2
+                          end
     | Data s1, Data s2 => if string_leb s1 s2 then true else false
     | Meta _, Data _ => true
     | Data _, Meta _ => false
