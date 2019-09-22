@@ -398,7 +398,7 @@ Module Tree.
    *   Otherwise, that determines whether a node is before or after the children.
    * - If the number of slashes match, then the directory must be a prefix of the child.
    *)
-  Fixpoint childCmp (prefix : string) (value : string) : comparison :=
+  Fixpoint childCmpString (prefix : string) (value : string) : comparison :=
     let fix aux prefix value := match (prefix, value) with
         | (EmptyString, EmptyString) => Eq
         | (EmptyString, _) => Eq
@@ -414,8 +414,46 @@ Module Tree.
     | Eq => aux prefix value
     end.
 
-  Fixpoint childEntries {t : Set} (tr : Tree t) (s : string) : list Key :=
-    [].
+  (* Data is always too big; for Meta, compare the string. *)
+  Definition childCmp (prefix : string) (k : Key) : comparison :=
+    match k with
+    | Meta s => childCmpString prefix s
+    | Data _ => Gt
+    end.
+
+  Definition consSuccess {t : Set} (e : t) (status : ReadStatus (list t)) : ReadStatus (list t) := match status with
+  | ReadSuccess l => ReadSuccess (e::l)
+  | _ => status
+  end.
+
+  Fixpoint childEntries {t : Set} (tr : Tree t) (s : string) : (ReadStatus (list Key)) :=
+    match tr with
+    | Leaf _ es =>
+        let fix findMatches es := match es with
+            | [] => ReadSuccess []
+            | ((k, v)::es') => match childCmp s k with
+                | Lt => findMatches es'
+                | Eq => consSuccess k (findMatches es')
+                | Gt => ReadSuccess []
+              end
+            end in
+        findMatches es
+    | InternalNode _ es =>
+        let fix recurseChildren es := match es with
+            | [] => ReadSuccess []
+            | ((k, nodeId)::es') => match childCmp s k with
+              | Gt => ReadSuccess [] (* We've gone too far; give up *)
+              | _ => match es' with (* Check the next firstKey to see if we're big enough. *)
+                | [] => ReadNeedNode nodeId (* Last one; descend *)
+                | ((k', _)::_) => match childCmp s k' with
+                  | Lt => recurseChildren es' (* We're too small; skip us *)
+                  | _ => ReadNeedNode nodeId (* We're a candidate; descend *)
+                  end
+                end
+              end
+            end in
+        recurseChildren es
+    end.
     (*let k := Meta s in
     let prefixSlash := add_final_slash (keyPath k) in
     let getSuffix := fun mpath => match mpath with
