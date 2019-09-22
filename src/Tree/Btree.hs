@@ -13,6 +13,7 @@ import Data.Maybe (fromJust, isJust)
 import GHC.Generics (Generic)
 
 deriving instance Show Key
+deriving instance Show Comparison
 deriving instance Generic Key
 instance Binary Key
 deriving instance Show a => Show (Tree a)

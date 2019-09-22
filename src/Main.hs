@@ -130,6 +130,12 @@ testFs = do
   print =<< fsRead  "/dir3/file55" () 100 0
   print =<< fsRead  "/dir2/file3" () 100 0
   print =<< fsRead  "/file3doesnotexist" () 100 0
+  putStrLn $ "eq: " ++ show (Tree.childCmp "/asdf/" "/asdf/wer")
+  putStrLn $ "lt: " ++ show (Tree.childCmp "/asdf/" "/asde/wer")
+  putStrLn $ "lt: " ++ show (Tree.childCmp "/asdf/" "/a")
+  putStrLn $ "lt: " ++ show (Tree.childCmp "/asdf/asdf/asdf/" "/b")
+  putStrLn $ "gt: " ++ show (Tree.childCmp "/asdf/" "/asdo/wer")
+  putStrLn $ "gt: " ++ show (Tree.childCmp "/bsdf/" "/asdx/wer/asdf/")
 
 printBtree :: String -> Tree t -> IO ()
 printBtree prefix tr =

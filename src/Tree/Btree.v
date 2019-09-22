@@ -99,15 +99,15 @@ Module Tree.
     | Data s => Data (op s)
     end.
 
-  Fixpoint count_slashes (path : string) : nat :=
+  Fixpoint countSlashes (path : string) : nat :=
     match path with
     | EmptyString => 0
-    | String c path' => (if Ascii.eqb c "/" then 1 else 0) + count_slashes path'
+    | String c path' => (if Ascii.eqb c "/" then 1 else 0) + countSlashes path'
     end.
 
   Definition leb_key (a : Key) (b : Key) : bool :=
     match a, b with
-    | Meta s1, Meta s2 => match Nat.compare (count_slashes s1) (count_slashes s2) with
+    | Meta s1, Meta s2 => match Nat.compare (countSlashes s1) (countSlashes s2) with
                           | Lt => true
                           | Gt => false
                           | Eq => string_leb s1 s2
@@ -393,7 +393,28 @@ Module Tree.
       ) ks
     end.
 
-  Fixpoint children {t : Set} (tr : Tree t) (s : string) : list Key :=
+  (* Compare for children of a slash-suffixed directory, in metadata order.  So
+   * - All children must have the same number of slashes as the prefix.
+   *   Otherwise, that determines whether a node is before or after the children.
+   * - If the number of slashes match, then the directory must be a prefix of the child.
+   *)
+  Fixpoint childCmp (prefix : string) (value : string) : comparison :=
+    let fix aux prefix value := match (prefix, value) with
+        | (EmptyString, EmptyString) => Eq
+        | (EmptyString, _) => Eq
+        | (_, EmptyString) => Lt
+        | (String pc p', String vc v') => match Nat.compare (Ascii.nat_of_ascii vc) (Ascii.nat_of_ascii pc) with
+            | Eq => aux p' v'
+            | result => result
+            end
+        end in
+    match Nat.compare (countSlashes value) (countSlashes prefix) with
+    | Gt => Gt
+    | Lt => Lt
+    | Eq => aux prefix value
+    end.
+
+  Fixpoint childEntries {t : Set} (tr : Tree t) (s : string) : list Key :=
     [].
     (*let k := Meta s in
     let prefixSlash := add_final_slash (keyPath k) in
