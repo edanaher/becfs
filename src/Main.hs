@@ -291,7 +291,7 @@ lookupData :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t t)
 lookupData tr k = lookupNode tr (Tree.Data k)
 
 childEntries tr k =
-  let aux :: Binary t => Show t => Tree t -> IO (Tree.ReadStatus t [Tree.Key])
+  let aux :: Binary t => Show t => Tree t -> IO (Tree.ReadStatus t [(Tree.Key, t)])
       aux tr = do
         attempt <- return $ Tree.childEntries tr k
         case  attempt of
@@ -300,11 +300,11 @@ childEntries tr k =
           Tree.ReadError str -> error $ "Error reading node: " ++ str
           Tree.ReadNeedNode id -> error $ "ChildEntries shouldn't Need a Node"
           Tree.ReadRepeatOn nodes -> do
-               listOfLists :: [[Tree.Key]] <- flip mapM nodes $ \n -> do
-                    childTr <- fetchNode n :: IO (Tree TreeValue)
+               listOfLists <- flip mapM nodes $ \n -> do
+                    childTr <- fetchNode n
                     childRes <- aux childTr
                     case childRes of
-                      Tree.ReadSuccess l -> return l :: IO [Tree.Key]
+                      Tree.ReadSuccess l -> return l
                       _ -> error $ "Error reading childEntries: expected Success, got " ++ show childRes
                lists <- return $ concat listOfLists
                return $ Tree.ReadSuccess lists
@@ -613,23 +613,22 @@ fsOpenDir _ = return eOK
 
 fsReadDir :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
 fsReadDir dir = do
-  return $ Right []{-
   ctx <- getFuseContext
   metadata <- emptyDirMetadata
-  tree <- getTree treefile
-  writeErr $ "Reading dir " ++ show dir ++ " => " ++ show (Tree.children tree dir)
+  tree <- fetchRootNode :: IO (Tree TreeValue)
+  Tree.ReadSuccess entries <- childEntries tree dir
+  writeErr $ "Reading dir " ++ show dir ++ " => " ++ show entries
   baseFileMetadata <- emptyFileMetadata
   val <- return $ Right $ [(".", dirStat metadata ctx),
                     ("..", dirStat metadata ctx)] ++
-                   map (\path -> case Tree.lookupMeta tree (appendPath [dir, path]) of
-                       Nothing -> (path, fileStat baseFileMetadata ctx)
-                       Just md -> case md of
-                         FileMetadata{} -> (path, fileStat md ctx)
-                         DirMetadata{} -> (path, dirStat md ctx)
-                         SymlinkMetadata{} -> (path, symlinkStat md ctx)
-                       ) (map Tree.keyPath $ filter isMeta $ Tree.children tree dir)
+                   map (\(Tree.Meta path, meta) ->
+                       case meta of
+                         FileMetadata{} -> (path, fileStat meta ctx)
+                         DirMetadata{} -> (path, dirStat meta ctx)
+                         SymlinkMetadata{} -> (path, symlinkStat meta ctx)
+                       ) entries
   writeErr $ "  read dir " ++ show dir ++ " => " ++ (case val of Right dirs -> show dirs; Left _ -> "ERROR")
-  return val-}
+  return val
 
 fsOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno ())
 fsOpen path mode flags = do

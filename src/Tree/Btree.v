@@ -428,14 +428,14 @@ Module Tree.
   | _ => status
   end.
 
-  Fixpoint childEntries {t : Set} (tr : Tree t) (s : string) : (ReadStatus t (list Key)) :=
+  Fixpoint childEntries {t : Set} (tr : Tree t) (s : string) : (ReadStatus t (list (Key * t))) :=
     match tr with
     | Leaf _ es =>
         let fix findMatches es := match es with
             | [] => ReadSuccess []
             | ((k, v)::es') => match childCmp s k with
                 | Lt => findMatches es'
-                | Eq => consSuccess k (findMatches es')
+                | Eq => consSuccess (k, v) (findMatches es')
                 | Gt => ReadSuccess []
               end
             end in
