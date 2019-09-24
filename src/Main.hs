@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveGeneric, StandaloneDeriving #-}
+{-# LANGUAGE DeriveGeneric, StandaloneDeriving, ScopedTypeVariables #-}
 
 module Main where
 
@@ -131,7 +131,9 @@ testFs = do
   print =<< fsRead  "/dir2/dir2/file3" () 100 0
   print =<< fsRead  "/file3doesnotexist" () 100 0
   root <- fetchRootNode :: IO (Tree TreeValue)
-  print $ Tree.childEntries root "/dir2/dir2"
+  print =<< childEntries root "/dir2/"
+  print =<< childEntries root "/dir2/dir2/"
+  print =<< childEntries root "/dir1/"
 
 
 printBtree :: String -> Tree t -> IO ()
@@ -266,9 +268,9 @@ updateData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatu
 updateData tr k v = updateNode tr (Tree.Data k) v
 
 
-lookupNode :: Binary t => Show t => Tree t -> Tree.Key -> IO (Tree.ReadStatus t)
+lookupNode :: Binary t => Show t => Tree t -> Tree.Key -> IO (Tree.ReadStatus t t)
 lookupNode tr k =
-  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
+  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t t)
       aux tr nodes = do
         attempt <- return $ Tree.lookup tr k nodes
         case attempt of
@@ -282,11 +284,33 @@ lookupNode tr k =
   in
   aux tr []
 
-lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
+lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t t)
 lookupMeta tr k = lookupNode tr (Tree.Meta k)
 
-lookupData :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
+lookupData :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t t)
 lookupData tr k = lookupNode tr (Tree.Data k)
+
+childEntries tr k =
+  let aux :: Binary t => Show t => Tree t -> IO (Tree.ReadStatus t [Tree.Key])
+      aux tr = do
+        attempt <- return $ Tree.childEntries tr k
+        case  attempt of
+          Tree.ReadSuccess _ -> return attempt
+          Tree.ReadDoesNotExist -> return attempt
+          Tree.ReadError str -> error $ "Error reading node: " ++ str
+          Tree.ReadNeedNode id -> error $ "ChildEntries shouldn't Need a Node"
+          Tree.ReadRepeatOn nodes -> do
+               listOfLists :: [[Tree.Key]] <- flip mapM nodes $ \n -> do
+                    childTr <- fetchNode n :: IO (Tree TreeValue)
+                    childRes <- aux childTr
+                    case childRes of
+                      Tree.ReadSuccess l -> return l :: IO [Tree.Key]
+                      _ -> error $ "Error reading childEntries: expected Success, got " ++ show childRes
+               lists <- return $ concat listOfLists
+               return $ Tree.ReadSuccess lists
+  in
+  aux tr
+
 
 {-# NOINLINE errlock #-}
 errlock :: MVar unit
@@ -346,6 +370,11 @@ fetchRootNode :: Show t => Binary t => IO (Tree t)
 fetchRootNode = do
   root_bytes <- Store.readRoot "/tmp/becfs"
   return $ (runGet Tree.deserialize root_bytes)
+
+fetchNode :: Show t => Binary t => Int -> IO (Tree t)
+fetchNode n = do
+  bytes <- Store.readNode "/tmp/becfs" n
+  return $ (runGet Tree.deserialize bytes)
 
 saveNodeUpdates :: Binary t => Show t => Tree.WriteStatus t -> IO ()
 saveNodeUpdates (Tree.WriteSuccess root nodes) = do
