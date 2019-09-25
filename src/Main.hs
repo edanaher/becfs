@@ -92,11 +92,11 @@ emptyDirMetadata = do
 
 main :: IO ()
 main = do
-  testStore
-  testBtree
+  --testStore
+  --testBtree
   Store.writeRoot "/tmp/becfs" 1 $ runPut $ Tree.serialize (Tree.empty :: Tree TreeValue)
-  testFs
-  --fuseMain fsOps exnHandler
+  --testFs
+  fuseMain fsOps exnHandler
 
 extractTreeFromStatus :: Tree.WriteStatus t -> Tree t
 extractTreeFromStatus tr = case tr of
@@ -505,7 +505,7 @@ createSymlink from to = do
 
 setPerms :: FilePath -> FileMode -> IO Errno
 setPerms path perms = do
-  return eNOENT{-
+  return eNOSYS{-
   res <- updateTreeRet (\t ->
       case Tree.lookupMeta t path of
         Nothing -> (Tree.WriteSuccess t [], False)
@@ -520,7 +520,7 @@ setPerms path perms = do
 
 setOwnerGroup :: FilePath -> UserID -> GroupID -> IO Errno
 setOwnerGroup path uid gid = do
-  return eNOENT{-res <- updateTreeRet (\t ->
+  return eNOSYS{-res <- updateTreeRet (\t ->
       case Tree.lookupMeta t path of
         Nothing -> (Tree.WriteSuccess t [], False)
         Just m ->
@@ -597,17 +597,19 @@ fsGetFileStat "/" = do
   return $ Right $ dirStat metadata ctx
 fsGetFileStat path = do
   writeErr $ "Statting " ++ show path
-  --tree <- getTree treefile
   --writeErr $ "  statting " ++ show path ++ ": loaded tree " ++ show tree
-  return $ Left eNOENT{-case Tree.lookupMeta tree path of
-    Just metadata -> do
+  root <- fetchRootNode
+  meta <- lookupMeta root path
+  case meta of
+    Tree.ReadSuccess metadata -> do
       writeErr $ "  statting " ++ show path ++ " => " ++ show metadata
       ctx <- getFuseContext
       case metadata of
         FileMetadata{} -> return $ Right $ fileStat metadata ctx
         DirMetadata{} -> return $ Right $ dirStat metadata ctx
         SymlinkMetadata{} -> return $ Right $ symlinkStat metadata ctx
-    Nothing -> return $ Left eNOENT-}
+    Tree.ReadDoesNotExist -> return $ Left eNOENT
+    other -> error $ "Bad fsGetFileStat:" ++ show other
 
 fsOpenDir _ = return eOK
 
