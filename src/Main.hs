@@ -235,6 +235,7 @@ iterateOpUntilSuccess op tr k v =
             newNode <- return $ runGet Tree.deserialize bytes
             aux freshIds (nodes ++ [newNode]) nextId
           Tree.WriteError err -> error $ "Error inserting meta: " ++ err
+          other -> error $ "Unexpected WriteStatus: " ++ show other
   in do
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
   aux [] [] nextId
@@ -266,6 +267,16 @@ updateMeta tr k v = updateNode tr (Tree.Meta k) v
 
 updateData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 updateData tr k v = updateNode tr (Tree.Data k) v
+
+removeNode :: Tree TreeValue -> Tree.Key -> IO (Tree.WriteStatus TreeValue)
+removeNode tr k = do
+  iterateOpUntilSuccess (\tr k v ns ids -> Tree.remove tr k ns ids) tr k (DirMetadata 0)
+
+removeMeta :: Tree TreeValue -> String -> IO (Tree.WriteStatus TreeValue)
+removeMeta tr k = removeNode tr (Tree.Meta k)
+
+removeData :: Tree TreeValue -> String -> IO (Tree.WriteStatus TreeValue)
+removeData tr k = removeNode tr (Tree.Data k)
 
 
 lookupNode :: Binary t => Show t => Tree t -> Tree.Key -> IO (Tree.ReadStatus t t)
@@ -424,10 +435,10 @@ fileContents path = do
   tree <- getTree treefile
   return $ Tree.lookupData tree path-}
 
+{- TODO: Delete the data, too -}
 removeFile :: FilePath -> IO ()
 removeFile path = do
-  putStrLn "TODO"
-{-updateTree (\t -> Tree.removeMeta t path [] [] :: Tree.WriteStatus TreeValue)-}
+  updateTreeIO (\t -> removeMeta t path :: IO (Tree.WriteStatus TreeValue))
 
 removeDir :: FilePath -> IO ()
 removeDir path = do
