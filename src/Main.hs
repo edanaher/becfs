@@ -505,31 +505,27 @@ createSymlink from to = do
 
 setPerms :: FilePath -> FileMode -> IO Errno
 setPerms path perms = do
-  return eNOSYS{-
-  res <- updateTreeRet (\t ->
-      case Tree.lookupMeta t path of
-        Nothing -> (Tree.WriteSuccess t [], False)
-        Just m ->
-            (Tree.updateMeta t path (m { perms = perms }) [], True)
+  updateTreeRetIO (\t -> do
+      meta <- lookupMeta t path
+      case meta of
+        Tree.ReadDoesNotExist -> return (Tree.WriteSuccess t [], eNOENT)
+        Tree.ReadSuccess m -> do
+            update <- updateMeta t path (m { perms = perms })
+            return (update, eOK)
+        other -> error $ "Bad setperms result: " ++ show other
       )
-  if res then
-    return eOK
-  else
-    return eNOENT
-  -}
 
 setOwnerGroup :: FilePath -> UserID -> GroupID -> IO Errno
 setOwnerGroup path uid gid = do
-  return eNOSYS{-res <- updateTreeRet (\t ->
-      case Tree.lookupMeta t path of
-        Nothing -> (Tree.WriteSuccess t [], False)
-        Just m ->
-            (Tree.updateMeta t path (m { owner = uid, group = gid }) [], True)
+  updateTreeRetIO (\t -> do
+      meta <- lookupMeta t path
+      case meta of
+        Tree.ReadDoesNotExist -> return (Tree.WriteSuccess t [], eNOENT)
+        Tree.ReadSuccess m -> do
+            update <- updateMeta t path (m { owner = uid, group = gid })
+            return (update, eOK)
+        other -> error $ "Bad setperms result: " ++ show other
       )
-  if res then
-    return eOK
-  else
-    return eNOENT-}
 
 
 fileExists :: FilePath -> IO Bool
