@@ -679,8 +679,8 @@ fsCreateDevice path tp mode id = case tp of
 fsCreateDirectory :: FilePath -> FileMode -> IO Errno
 fsCreateDirectory path mode =  do
   writeErr $ "Creating directory " ++ show path
-{-metadata <- emptyDirMetadata
-  updateTree (\t -> Tree.insertMeta t path metadata [] [])-}
+  metadata <- emptyDirMetadata
+  updateTreeIO (\t -> insertMeta t path metadata)
   return eOK
 
 fsCreateSymlink :: FilePath -> FilePath -> IO Errno
