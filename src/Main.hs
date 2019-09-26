@@ -630,10 +630,11 @@ fsReadDir dir = do
   val <- return $ Right $ [(".", dirStat metadata ctx),
                     ("..", dirStat metadata ctx)] ++
                    map (\(Tree.Meta path, meta) ->
+                       let path' = reverse $ takeWhile (/= '/') $ reverse path in
                        case meta of
-                         FileMetadata{} -> (path, fileStat meta ctx)
-                         DirMetadata{} -> (path, dirStat meta ctx)
-                         SymlinkMetadata{} -> (path, symlinkStat meta ctx)
+                         FileMetadata{} -> (path', fileStat meta ctx)
+                         DirMetadata{} -> (path', dirStat meta ctx)
+                         SymlinkMetadata{} -> (path', symlinkStat meta ctx)
                        ) entries
   writeErr $ "  read dir " ++ show dir ++ " => " ++ (case val of Right dirs -> show dirs; Left _ -> "ERROR")
   return val
