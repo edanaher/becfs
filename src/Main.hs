@@ -465,17 +465,21 @@ writeToFile path contents offset' = do
   baseFileMetadata <- emptyFileMetadata
   ensureFileExists path
   updateTreeIO (\t ->
-    let metadata = baseFileMetadata {-case Tree.lookupMeta t path of
-          Just m -> m
-          Nothing -> baseFileMetadata-}
+    lookupMeta t path >>= \oldMeta ->
+    let metadata = case oldMeta of
+          Tree.ReadSuccess m -> m
+          Tree.ReadDoesNotExist -> baseFileMetadata
+          _ -> error $ "Got bad metadata writing to file " ++ show path
         length' = max (B.length contents + offset) (filesize metadata)
     in
     updateMeta t path (metadata { filesize = length' }))
   tree <- loadRoot "/tmp/becfs"
   updateTreeIO (\t ->
-    let oldcontents = B.empty{-case Tree.lookupData t path of
-          Just (Data d) -> d
-          _ -> B.empty-}
+    lookupData t path >>= \oldData ->
+    let oldcontents = case oldData of
+          Tree.ReadSuccess (Data d) -> d
+          Tree.ReadDoesNotExist -> B.empty
+          _ -> error $ "Got bad data writing to file " ++ show path
         prefix = B.take offset oldcontents
         suffix = B.drop (offset + B.length contents) oldcontents
         prefix' = if B.length prefix == offset
