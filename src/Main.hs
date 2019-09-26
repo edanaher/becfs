@@ -94,7 +94,6 @@ main :: IO ()
 main = do
   --testStore
   --testBtree
-  Store.writeRoot "/tmp/becfs" 1 $ runPut $ Tree.serialize (Tree.empty :: Tree TreeValue)
   --testFs
   fuseMain fsOps exnHandler
 
@@ -759,4 +758,4 @@ fsAccess str uid = return eOK
 
 fsInit :: IO ()
 fsInit = do
-  BL.writeFile treefile $ runPut $ Tree.serialize (Tree.empty :: Tree TreeValue)
+  Store.writeRoot "/tmp/becfs" 1 $ runPut $ Tree.serialize (Tree.empty :: Tree TreeValue)
