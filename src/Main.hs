@@ -620,7 +620,8 @@ fsGetFileStat path = do
 fsOpenDir _ = return eOK
 
 fsReadDir :: FilePath -> IO (Either Errno [(FilePath, FileStat)])
-fsReadDir dir = do
+fsReadDir dir' = do
+  dir <- return $ if last dir' == '/' then dir' else dir' ++ "/"
   ctx <- getFuseContext
   metadata <- emptyDirMetadata
   tree <- fetchRootNode :: IO (Tree TreeValue)
