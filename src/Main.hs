@@ -438,11 +438,11 @@ fileContents path = do
 removeFile :: FilePath -> IO ()
 removeFile path = do
   updateTreeIO (\t -> removeMeta t path :: IO (Tree.WriteStatus TreeValue))
+  updateTreeIO (\t -> removeData t path :: IO (Tree.WriteStatus TreeValue))
 
 removeDir :: FilePath -> IO ()
 removeDir path = do
-  putStrLn "TODO"
-{-updateTree (\t -> Tree.removeMeta t path [] [] :: Tree.WriteStatus TreeValue)-}
+  updateTreeIO (\t -> removeMeta t path :: IO (Tree.WriteStatus TreeValue))
 
 createFileMeta :: FilePath -> IO ()
 createFileMeta path =  do
