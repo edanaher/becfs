@@ -320,7 +320,7 @@ Module Tree.
                     match freshIds' with
                     | [] => WriteNeedFreshId 1
                     | (id1::freshIds'') =>
-                        let newList := app pre (app (map (fun r => (getNodeFirstKey r, getNodeId r)) rs) post) in
+                        let newList := (pre ++ map (fun r => (getNodeFirstKey r, getNodeId r)) rs ++ post)%list in
                         if negb (Nat.leb (List.length newList) max_node_size) then
                           match freshIds'' with
                           | (id1::id2::freshIds''') =>

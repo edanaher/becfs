@@ -73,17 +73,20 @@ appendPath (h:r) =
   then h ++ appendPath r
   else h ++ "/" ++ appendPath r
 
-emptyFileMetadata :: IO TreeValue
-emptyFileMetadata = do
+dummyFileMetadata :: Int -> IO TreeValue
+dummyFileMetadata size = do
   now <- getNow
   ctx <- getFuseContext
   return $ FileMetadata {
-    filesize = 0,
+    filesize = size,
     mtime = now,
     owner = fuseCtxUserID ctx,
     group = fuseCtxGroupID ctx,
     perms = CMode $ fromIntegral 0o644
   }
+
+emptyFileMetadata :: IO TreeValue
+emptyFileMetadata = dummyFileMetadata 0
 
 emptyDirMetadata :: IO TreeValue
 emptyDirMetadata = do
@@ -150,6 +153,23 @@ printBtree prefix tr =
             )
   in
   aux prefix tr
+
+showBtree :: String -> IO String
+showBtree prefix =
+  let aux :: String -> Tree t -> IO [String]
+      aux indent tr = case tr of
+        Tree.Leaf id ns -> do
+          flip mapM ns (\(key, _) -> return $ indent ++ show key ++ "\n")
+        Tree.InternalNode id ns -> do
+          return . concat =<< flip mapM ns (\(minKey, nodeId) -> do
+              bytes <- Store.readNode "/tmp/becfs" nodeId
+              tree' <- return $ runGet Tree.deserialize $ bytes :: IO (Tree TreeValue)
+              otherNodes <- aux (indent ++ "  ") tree'
+              me <- return $ indent ++ show nodeId ++ ": " ++ show minKey ++ "\n"
+              return $ me:otherNodes)
+  in do
+  tr <- fetchRootNode :: IO (Tree TreeValue)
+  return . ((show (Tree.getNodeId tr) ++ ":\n") ++) . concat =<< aux (prefix ++ "  ") tr
 
 printBtreeFromDisk :: String -> IO ()
 printBtreeFromDisk prefix = do
@@ -609,7 +629,11 @@ fsGetFileStat path = do
   writeErr $ "Statting " ++ show path
   --writeErr $ "  statting " ++ show path ++ ": loaded tree " ++ show tree
   root <- fetchRootNode
-  meta <- lookupMeta root path
+  meta <- if path == "/.tree" then do
+            result <- showBtree "" :: IO String
+            Tree.ReadSuccess <$> dummyFileMetadata (length result)
+          else
+            lookupMeta root path
   case meta of
     Tree.ReadSuccess metadata -> do
       writeErr $ "  statting " ++ show path ++ " => " ++ show metadata
@@ -648,7 +672,12 @@ fsOpen :: FilePath -> OpenMode -> OpenFileFlags -> IO (Either Errno ())
 fsOpen path mode flags = do
   writeErr $ "Opening path " ++ show path
   tree <- fetchRootNode :: IO (Tree TreeValue)
-  lookupData tree path >>= \r -> case r of
+  meta <- if path == "/.tree" then do
+            result <- showBtree "" :: IO String
+            Tree.ReadSuccess <$> dummyFileMetadata (length result) :: IO (Tree.ReadStatus TreeValue TreeValue)
+          else
+            lookupMeta tree path
+  case meta of
     Tree.ReadSuccess _ ->
       case mode of
         ReadOnly -> return $ Right ()
@@ -661,11 +690,15 @@ fsRead :: FilePath -> () -> ByteCount -> FileOffset -> IO (Either Errno B.ByteSt
 fsRead path () byteCount offset = do
   writeErr $ "Reading path " ++ show path
   tree <- fetchRootNode :: IO (Tree TreeValue)
-  result <- lookupData tree path
-  case result of
-      Tree.ReadSuccess (Data c) -> return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) c
-      Tree.ReadDoesNotExist -> return $ Left eNOENT
-      _ -> return $ Left eNOSYS
+  if path == "/.tree" then do
+    writeErr "Reading tree special case"
+    Right <$> B.pack <$> showBtree ""
+  else do
+    result <- lookupData tree path
+    case result of
+        Tree.ReadSuccess (Data c) -> return $ Right $ B.take (fromIntegral byteCount) $ B.drop (fromIntegral offset) c
+        Tree.ReadDoesNotExist -> return $ Left eNOENT
+        _ -> return $ Left eNOSYS
 
 fsWrite :: FilePath -> () -> B.ByteString -> FileOffset -> IO (Either Errno ByteCount)
 fsWrite path () bytes offset = do
