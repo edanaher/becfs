@@ -58,7 +58,7 @@ Module Tree.
 
   Definition max_node_size := 3.
 
-  Definition invalidKey := Meta "__DOESNOTEXIST__".
+  Definition invalidKey str := Meta ("__DOESNOTEXIST__" ++ str).
 
   Definition key_beq (k1 : Key) (k2 : Key) : bool :=
     match (k1, k2) with
@@ -76,7 +76,7 @@ Module Tree.
   Definition getNodeFirstKey {t : Set} (node : Tree t) : Key :=
     let firstKey {v : Set} (kvs : list (Key * v)) : Key := match kvs with
       | ((k,v)::kvs) => k
-      | _ => invalidKey (* Impossible? *)
+      | _ => invalidKey "firstkey" (* Impossible? *)
     end in
     match node with
     | Leaf _ kvs => (firstKey kvs)
@@ -200,7 +200,7 @@ Module Tree.
             else
               ([], (candidate), ((k', id)::children''))
         end
-    | _ => ([], (invalidKey, 0), []) (* Impossible *)
+    | _ => ([], (invalidKey "childId", 0), []) (* Impossible *)
     end.
 
   Definition splitList {t : Set} (nodes : list (Key * t)) : (list (Key * t) * list (Key * t)):=
