@@ -8,6 +8,8 @@ Require Import Coq.Strings.Ascii.
 Require Import Coq.Strings.String.
 Open Scope string_scope.
 
+Notation "A $ B" := (A (B)) (at level 90, right associativity).
+
 Module Tree.
   Definition trace {t : Type} (x : string) (y : t) : t := y.
   Definition show {t : Type} (v : t) : string := "".
@@ -146,7 +148,7 @@ Module Tree.
         if Nat.eqb (getNodeId child) childId then
           f child nodes'
         else
-          WriteError ("Wrong child next in list " ++ show (getNodeId child) ++ "/" ++ show childId)
+          WriteError $ "Wrong child next in list " ++ show (getNodeId child) ++ "/" ++ show childId
     end.
 
   Definition withReadChild {t : Set} {res : Set} (childId : NodeId) (nodes : list (Tree t)) (f : Tree t -> list (Tree t) -> ReadStatus res) : ReadStatus res :=
@@ -156,7 +158,7 @@ Module Tree.
         if Nat.eqb (getNodeId child) childId then
           f child nodes'
         else
-          ReadError ("Wrong child next in list " ++ show (getNodeId child) ++ "/" ++ show childId)
+          ReadError $ "Wrong child next in list " ++ show (getNodeId child) ++ "/" ++ show childId
     end.
 
 
@@ -251,7 +253,7 @@ Module Tree.
     | InternalNode id children =>
         match findChildId children k with
         | (pre, (minKey, childId), post) =>
-          withChild childId nodes (fun child nodes' =>
+          withChild childId nodes $ fun child nodes' =>
             match insertNode child k v nodes' freshIds with
             | IWriteSuccess rs ns freshIds' =>
                 match freshIds' with
@@ -270,7 +272,7 @@ Module Tree.
                       IWriteSuccess [InternalNode id1 newList] (rs ++ ns) freshIds''
                 end
             | status => status
-            end)
+            end
         end
     end. (*
         let children :=
@@ -326,7 +328,7 @@ Module Tree.
     | InternalNode id children =>
         match findChildId children k with
         | (pre, (minKey, childId), post) =>
-          withChild childId nodes (fun child nodes' =>
+          withChild childId nodes $ fun child nodes' =>
             match removeNode child k nodes' freshIds with
             | IWriteSuccess rs ns freshIds' =>
                 match freshIds' with
@@ -345,7 +347,7 @@ Module Tree.
                       IWriteSuccess [InternalNode id1 newList] (rs ++ ns) freshIds''
                 end
             | status => status
-            end)
+            end
         end
     end.
 
@@ -381,14 +383,14 @@ Module Tree.
         end
     | InternalNode _ ks =>
       let recurse childId :=
-        withReadChild childId nodes (fun child nodes' => lookup child k nodes')
+        withReadChild childId nodes $ fun child nodes' => lookup child k nodes'
       in
       (fix lookupList ks := match (*trace ("Looking up in " ++ show (map (fun kv => fst kv) ks))*) ks with
         | [] => ReadError "Empty child list" (* Impossible *)
         | (k', tr')::ks' => match ks' with
             | [] => recurse tr'
             | ((k'', tr'')::ks'') =>
-                if negb (leb_key k'' k) then
+                if negb $ leb_key k'' k then
                   recurse tr'
                 else
                   lookupList ks'
