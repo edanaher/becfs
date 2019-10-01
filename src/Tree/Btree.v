@@ -139,6 +139,27 @@ Module Tree.
           h::insertSorted lt r v
     end.
 
+  Definition withChild {t : Set} {res : Set} (childId : NodeId) (nodes : list (Tree t)) (f : Tree t -> list (Tree t) -> WriteStatus res) : WriteStatus res :=
+    match nodes with
+    | [] => WriteNeedNode childId
+    | (child::nodes') =>
+        if Nat.eqb (getNodeId child) childId then
+          f child nodes'
+        else
+          WriteError ("Wrong child next in list " ++ show (getNodeId child) ++ "/" ++ show childId)
+    end.
+
+  Definition withReadChild {t : Set} {res : Set} (childId : NodeId) (nodes : list (Tree t)) (f : Tree t -> list (Tree t) -> ReadStatus t res) : ReadStatus t res :=
+    match nodes with
+    | [] => ReadNeedNode childId
+    | (child::nodes') =>
+        if Nat.eqb (getNodeId child) childId then
+          f child nodes'
+        else
+          ReadError ("Wrong child next in list " ++ show (getNodeId child) ++ "/" ++ show childId)
+    end.
+
+
   (*Fixpoint treeWithoutValues {t : Set} (tr : Tree t) : Tree unit :=
     match tr with
     | Leaf l => Leaf (map (fun kv => (fst kv, tt)) l)
@@ -230,32 +251,26 @@ Module Tree.
     | InternalNode id children =>
         match findChildId children k with
         | (pre, (minKey, childId), post) =>
-          match nodes with
-          | [] => WriteNeedNode childId
-          | (child::nodes') =>
-              if Nat.eqb (getNodeId child) childId then
-                match insertNode child k v nodes' freshIds with
-                | IWriteSuccess rs ns freshIds' =>
-                    match freshIds' with
-                    | [] => WriteNeedFreshId 1
-                    | (id1::freshIds'') =>
-                        let newList := app pre (app (map (fun r => (getNodeFirstKey r, getNodeId r)) rs) post) in
-                        if negb (Nat.leb (List.length newList) max_node_size) then
-                          match freshIds'' with
-                          | (id1::id2::freshIds''') =>
-                            let (front, back) := splitList newList in
-                            let trees := [InternalNode id1 front; InternalNode id2 back] in
-                            IWriteSuccess trees (rs ++ ns) freshIds'''
-                          | _ => WriteNeedFreshId 2
-                          end
-                        else
-                          IWriteSuccess [InternalNode id1 newList] (rs ++ ns) freshIds''
-                    end
-                | status => status
+          withChild childId nodes (fun child nodes' =>
+            match insertNode child k v nodes' freshIds with
+            | IWriteSuccess rs ns freshIds' =>
+                match freshIds' with
+                | [] => WriteNeedFreshId 1
+                | (id1::freshIds'') =>
+                    let newList := app pre (app (map (fun r => (getNodeFirstKey r, getNodeId r)) rs) post) in
+                    if negb (Nat.leb (List.length newList) max_node_size) then
+                      match freshIds'' with
+                      | (id1::id2::freshIds''') =>
+                        let (front, back) := splitList newList in
+                        let trees := [InternalNode id1 front; InternalNode id2 back] in
+                        IWriteSuccess trees (rs ++ ns) freshIds'''
+                      | _ => WriteNeedFreshId 2
+                      end
+                    else
+                      IWriteSuccess [InternalNode id1 newList] (rs ++ ns) freshIds''
                 end
-              else
-                WriteError ("Wrong child next in list " ++ show id ++ "/" ++ show childId)
-          end
+            | status => status
+            end)
         end
     end. (*
         let children :=
@@ -311,32 +326,26 @@ Module Tree.
     | InternalNode id children =>
         match findChildId children k with
         | (pre, (minKey, childId), post) =>
-          match nodes with
-          | [] => WriteNeedNode childId
-          | (child::nodes') =>
-              if Nat.eqb (getNodeId child) childId then
-                match removeNode child k nodes' freshIds with
-                | IWriteSuccess rs ns freshIds' =>
-                    match freshIds' with
-                    | [] => WriteNeedFreshId 1
-                    | (id1::freshIds'') =>
-                        let newList := (pre ++ map (fun r => (getNodeFirstKey r, getNodeId r)) rs ++ post)%list in
-                        if negb (Nat.leb (List.length newList) max_node_size) then
-                          match freshIds'' with
-                          | (id1::id2::freshIds''') =>
-                            let (front, back) := splitList newList in
-                            let trees := [InternalNode id1 front; InternalNode id2 back] in
-                            IWriteSuccess trees (rs ++ ns) freshIds'''
-                          | _ => WriteNeedFreshId 2
-                          end
-                        else
-                          IWriteSuccess [InternalNode id1 newList] (rs ++ ns) freshIds''
-                    end
-                | status => status
+          withChild childId nodes (fun child nodes' =>
+            match removeNode child k nodes' freshIds with
+            | IWriteSuccess rs ns freshIds' =>
+                match freshIds' with
+                | [] => WriteNeedFreshId 1
+                | (id1::freshIds'') =>
+                    let newList := (pre ++ map (fun r => (getNodeFirstKey r, getNodeId r)) rs ++ post)%list in
+                    if negb (Nat.leb (List.length newList) max_node_size) then
+                      match freshIds'' with
+                      | (id1::id2::freshIds''') =>
+                        let (front, back) := splitList newList in
+                        let trees := [InternalNode id1 front; InternalNode id2 back] in
+                        IWriteSuccess trees (rs ++ ns) freshIds'''
+                      | _ => WriteNeedFreshId 2
+                      end
+                    else
+                      IWriteSuccess [InternalNode id1 newList] (rs ++ ns) freshIds''
                 end
-              else
-                WriteError ("Wrong child next in list " ++ show id ++ "/" ++ show childId)
-          end
+            | status => status
+            end)
         end
     end.
 
@@ -372,14 +381,7 @@ Module Tree.
         end
     | InternalNode _ ks =>
       let recurse childId :=
-        match nodes with
-        | [] => ReadNeedNode childId
-        | (child::nodes') =>
-            if Nat.eqb (getNodeId child) childId then
-              lookup child k nodes'
-            else
-              ReadError ("Wrong child next in list " ++ show (getNodeId child) ++ "/" ++ show childId)
-        end
+        withReadChild childId nodes (fun child nodes' => lookup child k nodes')
       in
       (fix lookupList ks := match (*trace ("Looking up in " ++ show (map (fun kv => fst kv) ks))*) ks with
         | [] => ReadError "Empty child list" (* Impossible *)
