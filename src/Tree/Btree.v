@@ -43,18 +43,18 @@ Module Tree.
   Arguments IWriteSuccess {t} _ _.
   Arguments WriteError {t} _.
 
-  Inductive ReadStatus (t : Set) (res : Set) : Set :=
-  | ReadNeedNode : NodeId -> ReadStatus t res
-  | ReadRepeatOn : list NodeId -> ReadStatus t res
-  | ReadSuccess : res -> ReadStatus t res
-  | ReadDoesNotExist : ReadStatus t res
-  | ReadError : string -> ReadStatus t res.
+  Inductive ReadStatus (res : Set) : Set :=
+  | ReadNeedNode : NodeId -> ReadStatus res
+  | ReadRepeatOn : list NodeId -> ReadStatus res
+  | ReadSuccess : res -> ReadStatus res
+  | ReadDoesNotExist : ReadStatus res
+  | ReadError : string -> ReadStatus res.
 
-  Arguments ReadNeedNode {t} {res} _.
-  Arguments ReadRepeatOn {t} {res} _.
-  Arguments ReadSuccess {t} {res} _.
-  Arguments ReadDoesNotExist {t} {res}.
-  Arguments ReadError {t} {res} _.
+  Arguments ReadNeedNode {res} _.
+  Arguments ReadRepeatOn {res} _.
+  Arguments ReadSuccess {res} _.
+  Arguments ReadDoesNotExist {res}.
+  Arguments ReadError {res} _.
 
   Definition max_node_size := 3.
 
@@ -149,7 +149,7 @@ Module Tree.
           WriteError ("Wrong child next in list " ++ show (getNodeId child) ++ "/" ++ show childId)
     end.
 
-  Definition withReadChild {t : Set} {res : Set} (childId : NodeId) (nodes : list (Tree t)) (f : Tree t -> list (Tree t) -> ReadStatus t res) : ReadStatus t res :=
+  Definition withReadChild {t : Set} {res : Set} (childId : NodeId) (nodes : list (Tree t)) (f : Tree t -> list (Tree t) -> ReadStatus res) : ReadStatus res :=
     match nodes with
     | [] => ReadNeedNode childId
     | (child::nodes') =>
@@ -372,7 +372,7 @@ Module Tree.
   Definition updateMeta {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := update tr (Meta s) v.
   Definition updateData {t : Set} (tr : Tree t) (s : string) (v : t) : list (Tree t) -> list NodeId -> WriteStatus t := update tr (Data s) v.
 
-  Fixpoint lookup {t : Set} (tr : Tree t) (k : Key) (nodes : list (Tree t)) : ReadStatus t t :=
+  Fixpoint lookup {t : Set} (tr : Tree t) (k : Key) (nodes : list (Tree t)) : ReadStatus t :=
     match (*trace ("Looking up in node" ++ show (getNodeId tr))*) tr with
     | Leaf _ vs =>
         match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) vs) with
@@ -425,12 +425,12 @@ Module Tree.
     | Data _ => Gt
     end.
 
-  Definition consSuccess {t : Set} {res : Set} (e : res) (status : ReadStatus t (list res)) : ReadStatus t (list res) := match status with
+  Definition consSuccess {res : Set} (e : res) (status : ReadStatus (list res)) : ReadStatus (list res) := match status with
   | ReadSuccess l => ReadSuccess (e::l)
   | _ => status
   end.
 
-  Fixpoint childEntries {t : Set} (tr : Tree t) (s : string) : (ReadStatus t (list (Key * t))) :=
+  Fixpoint childEntries {t : Set} (tr : Tree t) (s : string) : (ReadStatus (list (Key * t))) :=
     match tr with
     | Leaf _ es =>
         let fix findMatches es := match es with

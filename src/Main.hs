@@ -298,9 +298,9 @@ removeData :: Tree TreeValue -> String -> IO (Tree.WriteStatus TreeValue)
 removeData tr k = removeNode tr (Tree.Data k)
 
 
-lookupNode :: Binary t => Show t => Tree t -> Tree.Key -> IO (Tree.ReadStatus t t)
+lookupNode :: Binary t => Show t => Tree t -> Tree.Key -> IO (Tree.ReadStatus t)
 lookupNode tr k =
-  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t t)
+  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
       aux tr nodes = do
         attempt <- return $ Tree.lookup tr k nodes
         case attempt of
@@ -314,14 +314,14 @@ lookupNode tr k =
   in
   aux tr []
 
-lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t t)
+lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
 lookupMeta tr k = lookupNode tr (Tree.Meta k)
 
-lookupData :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t t)
+lookupData :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
 lookupData tr k = lookupNode tr (Tree.Data k)
 
 childEntries tr k =
-  let aux :: Binary t => Show t => Tree t -> IO (Tree.ReadStatus t [(Tree.Key, t)])
+  let aux :: Binary t => Show t => Tree t -> IO (Tree.ReadStatus [(Tree.Key, t)])
       aux tr = do
         attempt <- return $ Tree.childEntries tr k
         case  attempt of
@@ -674,7 +674,7 @@ fsOpen path mode flags = do
   tree <- fetchRootNode :: IO (Tree TreeValue)
   meta <- if path == "/.tree" then do
             result <- showBtree "" :: IO String
-            Tree.ReadSuccess <$> dummyFileMetadata (length result) :: IO (Tree.ReadStatus TreeValue TreeValue)
+            Tree.ReadSuccess <$> dummyFileMetadata (length result) :: IO (Tree.ReadStatus TreeValue)
           else
             lookupMeta tree path
   case meta of
