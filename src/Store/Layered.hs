@@ -4,17 +4,37 @@ where
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Lazy.Char8 as BL8
+import Control.Exception (catch)
+import Control.Concurrent.MVar
 import Data.List (sort)
 import System.Directory (getDirectoryContents)
+import System.IO.Unsafe (unsafePerformIO)
 import Text.Read (readMaybe)
+
+{-# NOINLINE lock #-}
+lock :: MVar unit
+lock = unsafePerformIO newEmptyMVar
+
+takeLock = putMVar lock ()
+releaseLock = takeMVar lock
 
 readNode :: String -> Int -> IO BL.ByteString
 readNode prefix id =
   BL.fromStrict <$> B.readFile (prefix ++ "/" ++ show id)
 
 writeNode :: String -> Int -> BL.ByteString -> IO ()
-writeNode prefix id contents =
+writeNode prefix id contents = do
   BL.writeFile (prefix ++ "/" ++ show id) contents
+  takeLock
+  nextIdFile <- (BL.fromStrict <$> B.readFile (prefix ++ "/nextId")) `catch` ((\_ -> return $ BL8.pack "1") :: IOError -> IO BL.ByteString)
+  case BL8.readInt nextIdFile of
+    Nothing -> error "Can't read next id file"
+    Just (nextId, _) -> do
+      if nextId <= id then do
+        BL.writeFile (prefix ++ "/nextId") (BL8.pack $ show $ id + 1)
+        releaseLock
+      else
+        releaseLock
 
 writeRoot :: String -> Int -> BL.ByteString -> IO ()
 writeRoot prefix id contents = do
@@ -30,10 +50,11 @@ readRoot prefix = do
 
 nextId :: String -> IO Int
 nextId prefix = do
-  contents <- getDirectoryContents prefix
-  final <- return $ last $ sort $ map (\f ->
-        case readMaybe f of
-          Nothing -> -1
-          Just n -> n) contents
-  return $ final + 1
-
+  takeLock
+  nextIdFile <- (BL.fromStrict <$> B.readFile (prefix ++ "/nextId")) `catch` ((\_ -> return $ BL8.pack "1") :: IOError -> IO BL.ByteString)
+  case BL8.readInt nextIdFile of
+    Nothing -> error "Can't read next id file"
+    Just (nextId, _) -> do
+      BL.writeFile (prefix ++ "/nextId") (BL8.pack $ show $ nextId + 1)
+      releaseLock
+      return nextId

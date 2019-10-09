@@ -257,6 +257,7 @@ iterateOpUntilSuccess op tr k v =
           other -> error $ "Unexpected WriteStatus: " ++ show other
   in do
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
+  writeErr $ "next id is " ++ show nextId
   aux [] [] nextId
 
 insertMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
@@ -276,6 +277,7 @@ updateNode tr k v = do
   Store.writeRoot "/tmp/becfs" (Tree.getNodeId rt) root_bytes
   flip mapM_ ns $ \node -> do
       bytes <- return $ runPut $ Tree.serialize node
+      writeErr $ "writing node " ++ (show $ Tree.getNodeId node)
       Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
 
   Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insert rt k v
@@ -412,6 +414,7 @@ saveNodeUpdates (Tree.WriteSuccess root nodes) = do
   Store.writeRoot "/tmp/becfs" (Tree.getNodeId root) root_bytes
   flip mapM_ nodes $ \node -> do
       bytes <- return $ runPut $ Tree.serialize node
+      writeErr $ "writing node " ++ (show $ Tree.getNodeId node)
       Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
 
 saveNodeUpdates status = error $ "Didn't get writesuccess: " ++ show status

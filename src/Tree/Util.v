@@ -2,8 +2,6 @@ Require Import Coq.Lists.List.
 Require Import Coq.Strings.Ascii.
 Require Import Coq.Strings.String.
 
-Notation "A $ B" := (A (B)) (at level 90, right associativity) : core_scope.
-
 Fixpoint add_final_slash (s : string) : string :=
   match s with
     | EmptyString => "/"%string
