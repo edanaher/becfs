@@ -31,9 +31,6 @@ import qualified Store.Layered as Store
 
 deriving instance Show Errno
 
-treefile = "/tmp/becfs-tree"
-treefile2 = "/tmp/becfs-tree.new"
-
 {-# NOINLINE lock #-}
 lock :: MVar unit
 lock = unsafePerformIO newEmptyMVar
@@ -381,24 +378,6 @@ fsOps = defaultFuseOps { fuseGetFileStat = fsGetFileStat,
                          fuseAccess = fsAccess,
                          fuseInit = fsInit
                        }
-
-updateTreeRet :: Show a => Binary a => (Tree a -> (Tree.WriteStatus a, b)) -> IO b
-updateTreeRet op = do
-  takeLock
-  bytes <- BL.fromStrict <$> B.readFile treefile
-  tree <- return $ (runGet Tree.deserialize bytes)
-  (tree', res) <- return $ case op tree of
-      (Tree.WriteSuccess root _, res) -> (root, res)
-      _ -> error "Didn't get writesuccess"
-  bytes' <- return $ runPut $ Tree.serialize tree'
-  BL.writeFile treefile2 bytes'
-  renameFile treefile2 treefile
-  releaseLock
-  return res
-
-updateTree :: Show a => Binary a => (Tree a -> Tree.WriteStatus a) -> IO ()
-updateTree op = do
-  updateTreeRet (\t -> (op t, ()))
 
 fetchRootNode :: Show t => Binary t => IO (Tree t)
 fetchRootNode = do
