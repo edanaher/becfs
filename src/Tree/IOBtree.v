@@ -23,6 +23,9 @@ Module IOTree.
     match x with
     | RawReturn v => f v
     end.
+  Notation "v >>= f" := (bind (v) (f)) (at level 90, left associativity).
+  Notation "v >> f" := (bind (v) (fun _ => f)) (at level 90, left associativity).
+
 
   Definition NodeId : Set := nat.
 
@@ -138,8 +141,11 @@ Module IOTree.
     end.
 
   Fixpoint lookup {t : Set} (putStr : string -> IO unit) (tr : IOTree t) (k : Key) : IO (ReadStatus t) :=
-    bind (putStr "yep")
-    (fun _ => rturn (ReadError "Unimplemented" : ReadStatus t)).
+    (putStr "yep") >>=
+    fun _ => putStr "no" >>
+    putStr "um" >>
+    rturn "UNIMPLEMENTED" >>=
+    fun str => rturn (ReadError str : ReadStatus t).
 
 
 End IOTree.
