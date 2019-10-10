@@ -24,7 +24,9 @@ import System.Posix.IO
 import System.Fuse
 
 import qualified Tree.Btree as Tree
-import Tree.Btree as Tree (Tree)
+import Tree.Btree (Tree)
+import qualified Tree.IOBtree as IOBTree
+import Tree.IOBtree (IOTree)
 import qualified Store.Layered as Store
 
 deriving instance Show Errno
