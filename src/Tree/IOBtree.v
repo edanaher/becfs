@@ -19,6 +19,11 @@ Module IOTree.
   Definition IO (t : Set) : Set := RawIO t.
   Definition rturn {t : Set} (x : t) : IO t := RawReturn x.
 
+  Definition bind {t : Set} {r : Set} (x : IO t) (f : t -> IO r) : IO r :=
+    match x with
+    | RawReturn v => f v
+    end.
+
   Definition NodeId : Set := nat.
 
   Inductive Key : Set :=
@@ -132,9 +137,9 @@ Module IOTree.
           h::insertSorted lt r v
     end.
 
-  Fixpoint lookup {t : Set} (putStr : string -> IO unit) (tr : IOTree t) (k : Key) : IO (unit) :=
-    putStr "yep".
-    (*rturn (ReadError "Unimplemented" : ReadStatus t).*)
+  Fixpoint lookup {t : Set} (putStr : string -> IO unit) (tr : IOTree t) (k : Key) : IO (ReadStatus t) :=
+    bind (putStr "yep")
+    (fun _ => rturn (ReadError "Unimplemented" : ReadStatus t)).
 
 
 End IOTree.
@@ -150,6 +155,7 @@ Extract Inlined Constant IOTree.show => "Prelude.show".
 (*Extract Inductive IOTree.RawIO => "IOSHOULDNTBEUSED" [ "RETURNSHOULDNTBEUSED" ].*)
 Extract Inlined Constant IOTree.rturn => "Prelude.return".
 Extract Constant IOTree.IO "t" => "Prelude.IO t".
+Extract Inlined Constant IOTree.bind => "( Prelude.>>= )".
 (*Extract Inlined Constant IOTree.trace => "(\ x y -> y)".*)
 (*Extract Inlined Constant IOTree.show => "(\ _ -> """")".*)
 Extraction "IOBtreeCoq.hs" IOTree.
