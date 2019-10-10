@@ -132,8 +132,9 @@ Module IOTree.
           h::insertSorted lt r v
     end.
 
-  Fixpoint lookup {t : Set} (tr : IOTree t) (k : Key) : IO (ReadStatus t) :=
-    rturn (ReadError "Unimplemented" : ReadStatus t).
+  Fixpoint lookup {t : Set} (putStr : string -> IO unit) (tr : IOTree t) (k : Key) : IO (unit) :=
+    putStr "yep".
+    (*rturn (ReadError "Unimplemented" : ReadStatus t).*)
 
 
 End IOTree.

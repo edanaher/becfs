@@ -186,11 +186,12 @@ testBtree =
         return tr'
       readMeta k = do
         root <- fetchIORootNode :: IO (IOTree TreeValue)
-        readResult <- IOTree.lookup root (IOTree.Meta k)
+        readResult <- IOTree.lookup (\str -> putStrLn $ "Inside coq!" ++ str) root (IOTree.Meta k)
         case readResult of
-          IOTree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"
-          IOTree.ReadDoesNotExist -> putStr $ "Read " ++ k ++ " DOESNOTEXIST" ++ "\n"
-          IOTree.ReadError str -> putStr $ "Read " ++ k ++ " ERROR: " ++ str ++ "\n"
+          _ -> putStrLn "Success"
+          --IOTree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"
+          --IOTree.ReadDoesNotExist -> putStr $ "Read " ++ k ++ " DOESNOTEXIST" ++ "\n"
+          --IOTree.ReadError str -> putStr $ "Read " ++ k ++ " ERROR: " ++ str ++ "\n"
   in do
   tree <- return Tree.empty
   tree1 <- addNode tree "3"
