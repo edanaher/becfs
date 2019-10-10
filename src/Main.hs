@@ -25,7 +25,7 @@ import System.Fuse
 
 import qualified Tree.Btree as Tree
 import Tree.Btree (Tree)
-import qualified Tree.IOBtree as IOBTree
+import qualified Tree.IOBtree as IOTree
 import Tree.IOBtree (IOTree)
 import qualified Store.Layered as Store
 
@@ -95,9 +95,9 @@ emptyDirMetadata = do
 main :: IO ()
 main = do
   --testStore
-  --testBtree
+  testBtree
   --testFs
-  fuseMain fsOps exnHandler
+  --fuseMain fsOps exnHandler
 
 extractTreeFromStatus :: Tree.WriteStatus t -> Tree t
 extractTreeFromStatus tr = case tr of
@@ -184,20 +184,20 @@ testBtree =
         mapM_ writeNode newNodes
         putStr $ "Tree+" ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
         return tr'
-      readMeta tr k = do
-        readResult <- lookupMeta tr k
+      readMeta k = do
+        root <- fetchIORootNode :: IO (IOTree TreeValue)
+        readResult <- IOTree.lookup root (IOTree.Meta k)
         case readResult of
-          Tree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"
-          Tree.ReadDoesNotExist -> putStr $ "Read " ++ k ++ " DOESNOTEXIST" ++ "\n"
-          Tree.ReadError str -> putStr $ "Read " ++ k ++ " ERROR: " ++ str ++ "\n"
-          Tree.ReadNeedNode nodeId -> putStr $ "Read " ++ k ++ " NEED NODE " ++ show nodeId ++ "\n"
+          IOTree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"
+          IOTree.ReadDoesNotExist -> putStr $ "Read " ++ k ++ " DOESNOTEXIST" ++ "\n"
+          IOTree.ReadError str -> putStr $ "Read " ++ k ++ " ERROR: " ++ str ++ "\n"
   in do
   tree <- return Tree.empty
   tree1 <- addNode tree "3"
   tree2 <- addNode tree1 "1"
   tree3 <- addNode tree2 "2"
-  readMeta tree3 "/file1"
-  readMeta tree3 "/file2"
+  readMeta "/file1"
+{-readMeta tree3 "/file2"
   readMeta tree3 "/file3"
   readMeta tree3 "/file4"
   tree4 <- addNode tree3 "4"
@@ -228,7 +228,7 @@ testBtree =
   readMeta tree25 "/file11"
   readMeta tree25 "/file94"
   readMeta tree25 "/file9499"
-  putStr "Success\n"
+  putStr "Success\n"-}
 
 testStore :: IO ()
 testStore = do
@@ -383,6 +383,11 @@ fetchRootNode :: Show t => Binary t => IO (Tree t)
 fetchRootNode = do
   root_bytes <- Store.readRoot "/tmp/becfs"
   return $ (runGet Tree.deserialize root_bytes)
+
+fetchIORootNode :: Show t => Binary t => IO (IOTree t)
+fetchIORootNode = do
+  root_bytes <- Store.readRoot "/tmp/becfs"
+  return $ (runGet IOTree.deserialize root_bytes)
 
 fetchNode :: Show t => Binary t => Int -> IO (Tree t)
 fetchNode n = do

@@ -12,6 +12,13 @@ Module IOTree.
   Definition trace {t : Type} (x : string) (y : t) : t := y.
   Definition show {t : Type} (v : t) : string := "".
 
+  Inductive RawIO (t : Set) : Set :=
+  | RawReturn : t -> RawIO t.
+  Arguments RawReturn {t} _.
+
+  Definition IO (t : Set) : Set := RawIO t.
+  Definition rturn {t : Set} (x : t) : IO t := RawReturn x.
+
   Definition NodeId : Set := nat.
 
   Inductive Key : Set :=
@@ -44,14 +51,10 @@ Module IOTree.
   Arguments WriteError {t} _.
 
   Inductive ReadStatus (res : Set) : Set :=
-  | ReadNeedNode : NodeId -> ReadStatus res
-  | ReadRepeatOn : list NodeId -> ReadStatus res
   | ReadSuccess : res -> ReadStatus res
   | ReadDoesNotExist : ReadStatus res
   | ReadError : string -> ReadStatus res.
 
-  Arguments ReadNeedNode {res} _.
-  Arguments ReadRepeatOn {res} _.
   Arguments ReadSuccess {res} _.
   Arguments ReadDoesNotExist {res}.
   Arguments ReadError {res} _.
@@ -71,16 +74,6 @@ Module IOTree.
     match node with
     | Leaf id _ => id
     | InternalNode id _ => id
-    end.
-
-  Definition getNodeFirstKey {t : Set} (node : IOTree t) : Key :=
-    let firstKey {v : Set} (kvs : list (Key * v)) : Key := match kvs with
-      | ((k,v)::kvs) => k
-      | _ => invalidKey "firstkey" (* Impossible? *)
-    end in
-    match node with
-    | Leaf _ kvs => (firstKey kvs)
-    | InternalNode _ kvs => firstKey kvs
     end.
 
   Definition option_key_beq (k1 : Key) (k2 : option Key) : bool :=
@@ -139,6 +132,9 @@ Module IOTree.
           h::insertSorted lt r v
     end.
 
+  Fixpoint lookup {t : Set} (tr : IOTree t) (k : Key) : IO (ReadStatus t) :=
+    rturn (ReadError "Unimplemented" : ReadStatus t).
+
 
 End IOTree.
 
@@ -150,6 +146,9 @@ Extract Inlined Constant fst => "Prelude.fst".
 Extract Inlined Constant map => "Prelude.map".
 Extract Inlined Constant IOTree.trace => "trace".
 Extract Inlined Constant IOTree.show => "Prelude.show".
+(*Extract Inductive IOTree.RawIO => "IOSHOULDNTBEUSED" [ "RETURNSHOULDNTBEUSED" ].*)
+Extract Inlined Constant IOTree.rturn => "Prelude.return".
+Extract Constant IOTree.IO "t" => "Prelude.IO t".
 (*Extract Inlined Constant IOTree.trace => "(\ x y -> y)".*)
 (*Extract Inlined Constant IOTree.show => "(\ _ -> """")".*)
 Extraction "IOBtreeCoq.hs" IOTree.
