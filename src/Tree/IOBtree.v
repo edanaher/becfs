@@ -17,7 +17,7 @@ Module IOTree.
   Arguments RawReturn {t} _.
 
   Definition IO (t : Set) : Set := RawIO t.
-  Definition rturn {t : Set} (x : t) : IO t := RawReturn x.
+  Definition ret {t : Set} (x : t) : IO t := RawReturn x.
 
   Definition bind {t : Set} {r : Set} (x : IO t) (f : t -> IO r) : IO r :=
     match x with
@@ -144,15 +144,15 @@ Module IOTree.
     match tr with
     | Leaf _ vs =>
         match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) vs) with
-          | None => rturn ReadDoesNotExist
-          | Some (k, v) => rturn (ReadSuccess v)
+          | None => ret ReadDoesNotExist
+          | Some (k, v) => ret (ReadSuccess v)
         end
     | InternalNode _ ks =>
           (putStr "yep") >>=
           fun _ => putStr "no" >>
           putStr "um" >>
-          rturn "UNIMPLEMENTED" >>=
-          fun str => rturn (ReadError str : ReadStatus t)
+          ret "UNIMPLEMENTED" >>=
+          fun str => ret (ReadError str : ReadStatus t)
     end.
 
 
@@ -167,7 +167,7 @@ Extract Inlined Constant map => "Prelude.map".
 Extract Inlined Constant IOTree.trace => "trace".
 Extract Inlined Constant IOTree.show => "Prelude.show".
 (*Extract Inductive IOTree.RawIO => "IOSHOULDNTBEUSED" [ "RETURNSHOULDNTBEUSED" ].*)
-Extract Inlined Constant IOTree.rturn => "Prelude.return".
+Extract Inlined Constant IOTree.ret => "Prelude.return".
 Extract Constant IOTree.IO "t" => "Prelude.IO t".
 Extract Inlined Constant IOTree.bind => "( Prelude.>>= )".
 (*Extract Inlined Constant IOTree.trace => "(\ x y -> y)".*)
