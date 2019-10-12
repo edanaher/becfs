@@ -92,6 +92,15 @@ emptyDirMetadata = do
   now <- getNow
   return $ DirMetadata { mtime = now }
 
+treeToIOTree :: Tree t -> IOTree t
+treeToIOTree tr =
+  let fixKey (Tree.Meta x) = IOTree.Meta x
+      fixKey (Tree.Data x) = IOTree.Data x
+      fixKeys = map (\(k, v) -> (fixKey k, v))
+  in case tr of
+    Tree.Leaf id vs -> IOTree.Leaf id $ fixKeys vs
+    Tree.InternalNode id vs -> IOTree.InternalNode id $ fixKeys vs
+
 main :: IO ()
 main = do
   --testStore
@@ -178,14 +187,14 @@ printBtreeFromDisk prefix = do
 testBtree :: IO ()
 testBtree =
   let addNode tr n = do
-        Tree.WriteSuccess tr' newNodes <- insertMeta tr ("/file" ++ n)  ("Metadata for " ++ show n)
+        Tree.WriteSuccess tr' newNodes <- insertMeta tr ("/file" ++ n)  ("Metadata for " ++ show n) :: IO (Tree.WriteStatus String)
         root_bytes <- return $ runPut $ Tree.serialize tr'
         Store.writeRoot "/tmp/becfs" (Tree.getNodeId tr') root_bytes
         mapM_ writeNode newNodes
         putStr $ "Tree+" ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
         return tr'
       readMeta k = do
-        root <- fetchIORootNode :: IO (IOTree TreeValue)
+        root <- fetchIORootNode :: IO (IOTree String)
         readResult <- IOTree.lookup (\str -> putStrLn $ "Inside coq!" ++ str) root (IOTree.Meta k)
         case readResult of
           IOTree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"

@@ -141,11 +141,19 @@ Module IOTree.
     end.
 
   Fixpoint lookup {t : Set} (putStr : string -> IO unit) (tr : IOTree t) (k : Key) : IO (ReadStatus t) :=
-    (putStr "yep") >>=
-    fun _ => putStr "no" >>
-    putStr "um" >>
-    rturn "UNIMPLEMENTED" >>=
-    fun str => rturn (ReadError str : ReadStatus t).
+    match tr with
+    | Leaf _ vs =>
+        match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) vs) with
+          | None => rturn ReadDoesNotExist
+          | Some (k, v) => rturn (ReadSuccess v)
+        end
+    | InternalNode _ ks =>
+          (putStr "yep") >>=
+          fun _ => putStr "no" >>
+          putStr "um" >>
+          rturn "UNIMPLEMENTED" >>=
+          fun str => rturn (ReadError str : ReadStatus t)
+    end.
 
 
 End IOTree.
