@@ -195,7 +195,8 @@ testBtree =
         return tr'
       readMeta k = do
         root <- fetchIORootNode :: IO (IOTree String)
-        readResult <- IOTree.lookup (\str -> putStrLn $ "Inside coq!" ++ str) root (IOTree.Meta k)
+        readResult <- IOTree.lookup 99 {- Height of the tree -}  fetchIONode root (IOTree.Meta k)
+
         case readResult of
           IOTree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"
           IOTree.ReadDoesNotExist -> putStr $ "Read " ++ k ++ " DOESNOTEXIST" ++ "\n"
@@ -206,11 +207,10 @@ testBtree =
   tree2 <- addNode tree1 "1"
   tree3 <- addNode tree2 "2"
   readMeta "/file1"
-{-readMeta tree3 "/file2"
-  readMeta tree3 "/file3"
-  readMeta tree3 "/file4"
+  readMeta "/file2"
+  readMeta "/file3"
   tree4 <- addNode tree3 "4"
-  readMeta tree4 "/file1"
+  readMeta "/file1"
   tree5 <- addNode tree4 "1a"
   tree6 <- addNode tree5 "6"
   tree7 <- addNode tree6 "8"
@@ -233,11 +233,11 @@ testBtree =
   tree24 <- addNode tree23 "67"
   tree25 <- addNode tree24 "58"
   --printBtree "" tree25
-  readMeta tree25 "/file58"
-  readMeta tree25 "/file11"
-  readMeta tree25 "/file94"
-  readMeta tree25 "/file9499"
-  putStr "Success\n"-}
+  readMeta "/file58"
+  readMeta "/file11"
+  readMeta "/file94"
+  readMeta "/file9499"
+  putStr "Success\n"
 
 testStore :: IO ()
 testStore = do
@@ -402,6 +402,11 @@ fetchNode :: Show t => Binary t => Int -> IO (Tree t)
 fetchNode n = do
   bytes <- Store.readNode "/tmp/becfs" n
   return $ (runGet Tree.deserialize bytes)
+
+fetchIONode :: Show t => Binary t => Int -> IO (IOTree t)
+fetchIONode n = do
+  bytes <- Store.readNode "/tmp/becfs" n
+  return $ (runGet IOTree.deserialize bytes)
 
 saveNodeUpdates :: Binary t => Show t => Tree.WriteStatus t -> IO ()
 saveNodeUpdates (Tree.WriteSuccess root nodes) = do

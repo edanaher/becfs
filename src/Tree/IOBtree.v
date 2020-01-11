@@ -42,7 +42,7 @@ Module IOTree.
   | InternalNode : NodeId -> list (Key * NodeId) -> IOTree t
   | Leaf : NodeId -> list (Key * t) -> IOTree t.
 
-  Arguments InternalNode {t} _.
+  Arguments InternalNode {t} _ _.
   Arguments Leaf {t} _.
 
   Inductive WriteStatus (t : Set) : Set :=
@@ -140,19 +140,30 @@ Module IOTree.
           h::insertSorted lt r v
     end.
 
-  Fixpoint lookup {t : Set} (putStr : string -> IO unit) (tr : IOTree t) (k : Key) : IO (ReadStatus t) :=
-    match tr with
-    | Leaf _ vs =>
-        match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) vs) with
-          | None => ret ReadDoesNotExist
-          | Some (k, v) => ret (ReadSuccess v)
-        end
-    | InternalNode _ ks =>
-          (putStr "yep") >>=
-          fun _ => putStr "no" >>
-          putStr "um" >>
-          ret "UNIMPLEMENTED" >>=
-          fun str => ret (ReadError str : ReadStatus t)
+  Fixpoint lookup {t : Set} (gas : nat) (fetchNode : NodeId -> IO (IOTree t)) (tr : IOTree t) (k : Key) : IO (ReadStatus t) :=
+    match gas with
+    | O => ret (ReadError "Out of gas")
+    | S gas' =>
+      match tr with
+      | Leaf _ vs =>
+          match (find (fun kv' => match kv' with (k', v) => key_beq k k' end) vs) with
+            | None => ret ReadDoesNotExist
+            | Some (k, v) => ret (ReadSuccess v)
+          end
+      | InternalNode _ ks =>
+          (fix lookupList ks := match ks with
+            | [] => ret (ReadError "Empty child list") (* Impossible *)
+            | (k', tr')::ks' => match ks' with
+                | [] => fetchNode tr' >>= fun child => lookup gas' fetchNode child k
+                | ((k'', tr'')::ks'') =>
+                    if negb (leb_key k'' k) then
+                      fetchNode tr' >>= fun child => lookup gas' fetchNode child k
+                    else
+                      lookupList ks'
+                end
+            end
+          ) ks
+      end
     end.
 
 
@@ -166,6 +177,7 @@ Extract Inlined Constant fst => "Prelude.fst".
 Extract Inlined Constant map => "Prelude.map".
 Extract Inlined Constant IOTree.trace => "trace".
 Extract Inlined Constant IOTree.show => "Prelude.show".
+Extract Inlined Constant IOTree.NodeId => "Prelude.Int".
 (*Extract Inductive IOTree.RawIO => "IOSHOULDNTBEUSED" [ "RETURNSHOULDNTBEUSED" ].*)
 Extract Inlined Constant IOTree.ret => "Prelude.return".
 Extract Constant IOTree.IO "t" => "Prelude.IO t".
