@@ -1,6 +1,6 @@
 let pkgs = import <nixpkgs> {};
     stdenv = pkgs.stdenv;
-    my-haskell-pkgs = pkgs.haskell.packages.ghc822.extend (self: super: {
+    my-haskell-pkgs = pkgs.haskell.packages.ghc822Binary.extend (self: super: {
       /*hslua_0_8_0 = super.hslua_0_8_0.override {
         lua5_1 = pkgs.lua5_3;
         };*/
