@@ -101,6 +101,11 @@ treeToIOTree tr =
     Tree.Leaf id vs -> IOTree.Leaf id $ fixKeys vs
     Tree.InternalNode id vs -> IOTree.InternalNode id $ fixKeys vs
 
+ioReadStatusToReadStatus :: IOTree.ReadStatus t -> Tree.ReadStatus t
+ioReadStatusToReadStatus (IOTree.ReadSuccess res) = Tree.ReadSuccess res
+ioReadStatusToReadStatus IOTree.ReadDoesNotExist = Tree.ReadDoesNotExist
+ioReadStatusToReadStatus (IOTree.ReadError err) = Tree.ReadError err
+
 main :: IO ()
 main = do
   --testStore
@@ -308,27 +313,23 @@ removeData :: Tree TreeValue -> String -> IO (Tree.WriteStatus TreeValue)
 removeData tr k = removeNode tr (Tree.Data k)
 
 
-lookupNode :: Binary t => Show t => Tree t -> Tree.Key -> IO (Tree.ReadStatus t)
+lookupNode :: Binary t => Show t => IOTree t -> IOTree.Key -> IO (IOTree.ReadStatus t)
 lookupNode tr k =
-  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
+  let aux :: Binary t => Show t => IOTree t -> [IOTree t] -> IO (IOTree.ReadStatus t)
       aux tr nodes = do
-        attempt <- return $ Tree.lookup tr k nodes
+        attempt <- IOTree.lookup 99 fetchIONode tr k
         case attempt of
-          Tree.ReadSuccess _ -> return attempt
-          Tree.ReadDoesNotExist -> return attempt
-          Tree.ReadError str -> error $ "Error reading node: " ++ str
-          Tree.ReadNeedNode id -> do
-            bytes <- Store.readNode "/tmp/becfs" id
-            tr' <- return $ (runGet Tree.deserialize bytes)
-            aux tr $ nodes ++ [tr']
+          IOTree.ReadSuccess _ -> return attempt
+          IOTree.ReadDoesNotExist -> return attempt
+          IOTree.ReadError str -> error $ "Error reading node: " ++ str
   in
   aux tr []
 
 lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
-lookupMeta tr k = lookupNode tr (Tree.Meta k)
+lookupMeta tr k = ioReadStatusToReadStatus <$> lookupNode (treeToIOTree tr) (IOTree.Meta k)
 
 lookupData :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
-lookupData tr k = lookupNode tr (Tree.Data k)
+lookupData tr k = ioReadStatusToReadStatus <$> lookupNode (treeToIOTree tr) (IOTree.Data k)
 
 childEntries tr k =
   let aux :: Binary t => Show t => Tree t -> IO (Tree.ReadStatus [(Tree.Key, t)])
