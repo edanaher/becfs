@@ -47,15 +47,13 @@ Module IOTree.
 
   Inductive WriteStatus (t : Set) : Set :=
   | WriteNeedFreshId : nat -> WriteStatus t
-  | WriteNeedNode : NodeId -> WriteStatus t
   | WriteSuccess : IOTree t -> list (IOTree t) -> WriteStatus t
-  | IWriteSuccess : list (IOTree t) -> list (IOTree t) -> list NodeId -> WriteStatus t
+  | IWriteSuccess : list (IOTree t) -> list (IOTree t) -> nat -> WriteStatus t
   | WriteError : string -> WriteStatus t.
 
   Arguments WriteNeedFreshId {t} _.
-  Arguments WriteNeedNode {t} _.
   Arguments WriteSuccess {t} _ _.
-  Arguments IWriteSuccess {t} _ _.
+  Arguments IWriteSuccess {t} _ _ _.
   Arguments WriteError {t} _.
 
   Inductive ReadStatus (res : Set) : Set :=
@@ -165,6 +163,35 @@ Module IOTree.
           ) ks
       end
     end.
+
+  Definition splitList {t : Set} (nodes : list (Key * t)) : (list (Key * t) * list (Key * t)):=
+    let splitPoint := Nat.div (List.length nodes) 2 in
+    let front := List.firstn splitPoint nodes in
+    let back := List.skipn splitPoint nodes in
+    (front, back).
+
+  Definition insertNode {t : Set} (tr : IOTree t) (k : Key) (v : t) (nextId : NodeId) : IO (WriteStatus t) :=
+    match tr with
+    | Leaf id entries =>
+        let newList := (insertSorted leb_key_pair entries (k, v)) in
+        if negb (Nat.leb (List.length newList) max_node_size) then
+          let (front, back) := splitList newList in
+          let trees := [Leaf nextId front; Leaf (nextId + 1) back] in
+          ret (IWriteSuccess trees [] (nextId + 2))
+        else
+           ret (IWriteSuccess [Leaf nextId newList] [] (nextId + 1))
+    | InternalNode id children =>
+      ret (WriteNeedFreshId 1)
+    end.
+
+  Definition insert {t : Set} (tr : IOTree t) (k : Key) (v : t) (nextId : NodeId) : IO (WriteStatus t) :=
+    insertNode tr k v nextId >>= fun res =>
+    match res with
+    | IWriteSuccess [] nodes nextId' => ret (WriteError "No root provided by insertNode")
+    | IWriteSuccess [tr'] nodes nextId' => ret (WriteSuccess tr' nodes)
+    | r => ret r
+    end.
+
 
 
 End IOTree.

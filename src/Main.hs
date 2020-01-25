@@ -101,10 +101,25 @@ treeToIOTree tr =
     Tree.Leaf id vs -> IOTree.Leaf id $ fixKeys vs
     Tree.InternalNode id vs -> IOTree.InternalNode id $ fixKeys vs
 
+ioTreeToTree :: IOTree t -> Tree t
+ioTreeToTree tr =
+  let fixKey (IOTree.Meta x) = Tree.Meta x
+      fixKey (IOTree.Data x) = Tree.Data x
+      fixKeys = map (\(k, v) -> (fixKey k, v))
+  in case tr of
+    IOTree.Leaf id vs -> Tree.Leaf id $ fixKeys vs
+    IOTree.InternalNode id vs -> Tree.InternalNode id $ fixKeys vs
+
 ioReadStatusToReadStatus :: IOTree.ReadStatus t -> Tree.ReadStatus t
 ioReadStatusToReadStatus (IOTree.ReadSuccess res) = Tree.ReadSuccess res
 ioReadStatusToReadStatus IOTree.ReadDoesNotExist = Tree.ReadDoesNotExist
 ioReadStatusToReadStatus (IOTree.ReadError err) = Tree.ReadError err
+
+ioWriteStatusToWriteStatus :: IOTree.WriteStatus t -> Tree.WriteStatus t
+ioWriteStatusToWriteStatus (IOTree.WriteNeedFreshId n) = Tree.WriteNeedFreshId n
+ioWriteStatusToWriteStatus (IOTree.WriteSuccess root nodes) = Tree.WriteSuccess (ioTreeToTree root) (map ioTreeToTree nodes)
+ioWriteStatusToWriteStatus (IOTree.IWriteSuccess roots nodes rootid) = Tree.WriteError "IWriteSuccess escaped"
+ioWriteStatusToWriteStatus (IOTree.WriteError err) = Tree.WriteError err
 
 main :: IO ()
 main = do
@@ -192,7 +207,7 @@ printBtreeFromDisk prefix = do
 testBtree :: IO ()
 testBtree =
   let addNode tr n = do
-        Tree.WriteSuccess tr' newNodes <- insertMeta tr ("/file" ++ n)  ("Metadata for " ++ show n) :: IO (Tree.WriteStatus String)
+        Tree.WriteSuccess tr' newNodes <- insertMetaIO tr ("/file" ++ n)  ("Metadata for " ++ show n) :: IO (Tree.WriteStatus String)
         root_bytes <- return $ runPut $ Tree.serialize tr'
         Store.writeRoot "/tmp/becfs" (Tree.getNodeId tr') root_bytes
         mapM_ writeNode newNodes
@@ -276,6 +291,11 @@ iterateOpUntilSuccess op tr k v =
 insertMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertMeta tr k v =
   iterateOpUntilSuccess Tree.insert tr (Tree.Meta k) v
+
+insertMetaIO :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
+insertMetaIO tr k v = do
+  nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
+  ioWriteStatusToWriteStatus <$> IOTree.insert (treeToIOTree tr) (IOTree.Meta k) v nextId
 
 insertData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertData tr k v =
