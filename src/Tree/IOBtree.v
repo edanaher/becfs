@@ -82,6 +82,16 @@ Module IOTree.
     | InternalNode id _ => id
     end.
 
+  Definition getNodeFirstKey {t : Set} (node : IOTree t) : Key :=
+    let firstKey {v : Set} (kvs : list (Key * v)) : Key := match kvs with
+      | ((k,v)::kvs) => k
+      | _ => invalidKey "firstkey" (* Impossible? *)
+    end in
+    match node with
+    | Leaf _ kvs => (firstKey kvs)
+    | InternalNode _ kvs => firstKey kvs
+    end.
+
   Definition option_key_beq (k1 : Key) (k2 : option Key) : bool :=
     match k2 with
     | None => false
@@ -189,6 +199,10 @@ Module IOTree.
     match res with
     | IWriteSuccess [] nodes nextId' => ret (WriteError "No root provided by insertNode")
     | IWriteSuccess [tr'] nodes nextId' => ret (WriteSuccess tr' nodes)
+    | IWriteSuccess [root1; root2] nodes nextId' =>
+            ret (WriteSuccess (InternalNode nextId
+                              [(getNodeFirstKey root1, getNodeId root1); (getNodeFirstKey root2, getNodeId root2)])
+                              (root1::root2::nodes))
     | r => ret r
     end.
 
