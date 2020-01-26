@@ -216,7 +216,12 @@ Module IOTree.
           insertNode gas' fetchNode child k v nextId >>= fun res => match res with
           | IWriteSuccess rs ns nextId' =>
               let newList := app pre (app (map (fun r => (getNodeFirstKey r, getNodeId r)) rs) post) in
-              ret (IWriteSuccess [InternalNode nextId' newList] (rs ++ ns) (nextId' + 1))
+              if negb (Nat.leb (List.length newList) max_node_size) then
+                let (front, back) := splitList newList in
+                let trees := [InternalNode nextId' front; InternalNode (nextId' + 1) back] in
+                ret (IWriteSuccess trees (rs ++ ns) (nextId' + 2))
+              else
+                ret (IWriteSuccess [InternalNode nextId' newList] (rs ++ ns) (nextId' + 1))
           | status => ret status
           end
         end
