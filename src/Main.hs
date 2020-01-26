@@ -230,33 +230,36 @@ testBtree =
   readMeta "/file2"
   readMeta "/file3"
   tree4 <- addNode tree3 "4"
+  readMeta "/file4"
   readMeta "/file1"
   tree5 <- addNode tree4 "1a"
-  tree6 <- addNode tree5 "6"
-  tree7 <- addNode tree6 "8"
-  tree8 <- addNode tree7 "7"
-  tree9 <- addNode tree8 "11"
-  tree10 <- addNode tree9 "13"
-  tree11 <- addNode tree10 "14"
-  tree12 <- addNode tree11 "15"
-  tree13 <- addNode tree12 "16"
-  tree14 <- addNode tree13 "17"
-  tree15 <- addNode tree14 "18"
-  tree16 <- addNode tree15 "19"
-  tree17 <- addNode tree16 "20"
-  tree18 <- addNode tree17 "21"
-  tree19 <- addNode tree18 "22"
-  tree20 <- addNode tree19 "23"
-  tree21 <- addNode tree20 "94"
-  tree22 <- addNode tree21 "85"
-  tree23 <- addNode tree22 "76"
-  tree24 <- addNode tree23 "67"
-  tree25 <- addNode tree24 "58"
-  --printBtree "" tree25
-  readMeta "/file58"
-  readMeta "/file11"
-  readMeta "/file94"
-  readMeta "/file9499"
+  readMeta "/file1a"
+  readMeta "/file4"
+--  tree6 <- addNode tree5 "6"
+--  tree7 <- addNode tree6 "8"
+--  tree8 <- addNode tree7 "7"
+--  tree9 <- addNode tree8 "11"
+--  tree10 <- addNode tree9 "13"
+--  tree11 <- addNode tree10 "14"
+--  tree12 <- addNode tree11 "15"
+--  tree13 <- addNode tree12 "16"
+--  tree14 <- addNode tree13 "17"
+--  tree15 <- addNode tree14 "18"
+--  tree16 <- addNode tree15 "19"
+--  tree17 <- addNode tree16 "20"
+--  tree18 <- addNode tree17 "21"
+--  tree19 <- addNode tree18 "22"
+--  tree20 <- addNode tree19 "23"
+--  tree21 <- addNode tree20 "94"
+--  tree22 <- addNode tree21 "85"
+--  tree23 <- addNode tree22 "76"
+--  tree24 <- addNode tree23 "67"
+--  tree25 <- addNode tree24 "58"
+--  --printBtree "" tree25
+--  readMeta "/file58"
+--  readMeta "/file11"
+--  readMeta "/file94"
+--  readMeta "/file9499"
   putStr "Success\n"
 
 testStore :: IO ()
@@ -295,7 +298,7 @@ insertMeta tr k v =
 insertMetaIO :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertMetaIO tr k v = do
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
-  ioWriteStatusToWriteStatus <$> IOTree.insert (treeToIOTree tr) (IOTree.Meta k) v nextId
+  ioWriteStatusToWriteStatus <$> IOTree.insert fetchIONode (treeToIOTree tr) (IOTree.Meta k) v nextId
 
 insertData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertData tr k v =

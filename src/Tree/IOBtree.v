@@ -174,28 +174,57 @@ Module IOTree.
       end
     end.
 
+  Fixpoint findChildId (children : list (Key * NodeId)) (k : Key) : (list (Key * NodeId)) * (Key * NodeId) * (list (Key * NodeId)) :=
+    match children with
+    | (candidate::children') =>
+        match children' with
+        | [] => ([], candidate, [])
+        | ((k', id)::children'') =>
+            if leb_key k' k then
+              match findChildId children' k with
+              | (pre, (minKey, id'), post) => (candidate::pre, (minKey, id'), post)
+              end
+            else
+              ([], (candidate), ((k', id)::children''))
+        end
+    | _ => ([], (invalidKey "childId", 0), []) (* Impossible *)
+    end.
+
   Definition splitList {t : Set} (nodes : list (Key * t)) : (list (Key * t) * list (Key * t)):=
     let splitPoint := Nat.div (List.length nodes) 2 in
     let front := List.firstn splitPoint nodes in
     let back := List.skipn splitPoint nodes in
     (front, back).
 
-  Definition insertNode {t : Set} (tr : IOTree t) (k : Key) (v : t) (nextId : NodeId) : IO (WriteStatus t) :=
-    match tr with
-    | Leaf id entries =>
-        let newList := (insertSorted leb_key_pair entries (k, v)) in
-        if negb (Nat.leb (List.length newList) max_node_size) then
-          let (front, back) := splitList newList in
-          let trees := [Leaf nextId front; Leaf (nextId + 1) back] in
-          ret (IWriteSuccess trees [] (nextId + 2))
-        else
-           ret (IWriteSuccess [Leaf nextId newList] [] (nextId + 1))
-    | InternalNode id children =>
-      ret (WriteNeedFreshId 1)
+  Fixpoint insertNode {t : Set} (gas : nat) (fetchNode : NodeId -> IO (IOTree t)) (tr : IOTree t) (k : Key) (v : t) (nextId : NodeId) : IO (WriteStatus t) :=
+    match gas with
+    | O => ret (WriteError "Out of gas")
+    | S gas' =>
+      match tr with
+      | Leaf id entries =>
+          let newList := (insertSorted leb_key_pair entries (k, v)) in
+          if negb (Nat.leb (List.length newList) max_node_size) then
+            let (front, back) := splitList newList in
+            let trees := [Leaf nextId front; Leaf (nextId + 1) back] in
+            ret (IWriteSuccess trees [] (nextId + 2))
+          else
+             ret (IWriteSuccess [Leaf nextId newList] [] (nextId + 1))
+      | InternalNode id children =>
+        match findChildId children k with
+        | (pre, (minKey, childId), post) =>
+          fetchNode childId >>= fun child =>
+          insertNode gas' fetchNode child k v nextId >>= fun res => match res with
+          | IWriteSuccess rs ns nextId' =>
+              let newList := app pre (app (map (fun r => (getNodeFirstKey r, getNodeId r)) rs) post) in
+              ret (IWriteSuccess [InternalNode nextId' newList] (rs ++ ns) (nextId' + 1))
+          | status => ret status
+          end
+        end
+      end
     end.
 
-  Definition insert {t : Set} (tr : IOTree t) (k : Key) (v : t) (nextId : NodeId) : IO (WriteStatus t) :=
-    insertNode tr k v nextId >>= fun res =>
+  Definition insert {t : Set} (fetchNode : NodeId -> IO (IOTree t)) (tr : IOTree t) (k : Key) (v : t) (nextId : NodeId) : IO (WriteStatus t) :=
+    insertNode 99 (* Height of tree *) fetchNode tr k v nextId >>= fun res =>
     match res with
     | IWriteSuccess [] nodes nextId' => ret (WriteError "No root provided by insertNode")
     | IWriteSuccess [tr'] nodes nextId' => ret (WriteSuccess tr' nodes)
