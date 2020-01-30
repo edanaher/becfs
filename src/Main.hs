@@ -213,6 +213,13 @@ testBtree =
         mapM_ writeNode newNodes
         putStr $ "Tree+" ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
         return tr'
+      removeNode (tr :: Tree String) (n :: String) = do
+        Tree.WriteSuccess tr' newNodes <- removeMeta tr ("/file" ++ n) "" :: IO (Tree.WriteStatus String)
+        root_bytes <- return $ runPut $ Tree.serialize tr'
+        Store.writeRoot "/tmp/becfs" (Tree.getNodeId tr') root_bytes
+        mapM_ writeNode newNodes
+        putStr $ "Tree- " ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
+        return tr'
       readMeta k = do
         root <- fetchIORootNode :: IO (IOTree String)
         readResult <- IOTree.lookup 99 {- Height of the tree -}  fetchIONode root (IOTree.Meta k)
@@ -229,7 +236,12 @@ testBtree =
   readMeta "/file1"
   readMeta "/file2"
   readMeta "/file3"
-  tree4 <- addNode tree3 "4"
+  tree3a <- removeNode tree3 "2"
+  readMeta "/file1"
+  readMeta "/file2"
+  tree3b <- addNode tree3a "2"
+  readMeta "/file2"
+  tree4 <- addNode tree3b "4"
   readMeta "/file4"
   readMeta "/file1"
   tree5 <- addNode tree4 "1a"
@@ -325,16 +337,15 @@ updateMeta tr k v = updateNode tr (Tree.Meta k) v
 updateData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 updateData tr k v = updateNode tr (Tree.Data k) v
 
-removeNode :: Tree TreeValue -> Tree.Key -> IO (Tree.WriteStatus TreeValue)
-removeNode tr k = do
-  iterateOpUntilSuccess (\tr k v ns ids -> Tree.remove tr k ns ids) tr k (DirMetadata 0)
+removeNode :: Binary t => Show t => Tree t -> Tree.Key -> t -> IO (Tree.WriteStatus t)
+removeNode tr k dummy = do
+  iterateOpUntilSuccess (\tr k v ns ids -> Tree.remove tr k ns ids) tr k dummy
 
-removeMeta :: Tree TreeValue -> String -> IO (Tree.WriteStatus TreeValue)
+removeMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 removeMeta tr k = removeNode tr (Tree.Meta k)
 
-removeData :: Tree TreeValue -> String -> IO (Tree.WriteStatus TreeValue)
+removeData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 removeData tr k = removeNode tr (Tree.Data k)
-
 
 lookupNode :: Binary t => Show t => IOTree t -> IOTree.Key -> IO (IOTree.ReadStatus t)
 lookupNode tr k =
@@ -484,12 +495,12 @@ fileContents path = do
 {- TODO: Delete the data, too -}
 removeFile :: FilePath -> IO ()
 removeFile path = do
-  updateTreeIO (\t -> removeMeta t path :: IO (Tree.WriteStatus TreeValue))
-  updateTreeIO (\t -> removeData t path :: IO (Tree.WriteStatus TreeValue))
+  updateTreeIO (\t -> removeMeta t path (DirMetadata 0) :: IO (Tree.WriteStatus TreeValue))
+  updateTreeIO (\t -> removeData t path (DirMetadata 0) :: IO (Tree.WriteStatus TreeValue))
 
 removeDir :: FilePath -> IO ()
 removeDir path = do
-  updateTreeIO (\t -> removeMeta t path :: IO (Tree.WriteStatus TreeValue))
+  updateTreeIO (\t -> removeMeta t path (DirMetadata 0):: IO (Tree.WriteStatus TreeValue))
 
 createFileMeta :: FilePath -> IO ()
 createFileMeta path =  do
