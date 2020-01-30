@@ -214,7 +214,7 @@ testBtree =
         putStr $ "Tree+" ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
         return tr'
       removeNode (tr :: Tree String) (n :: String) = do
-        Tree.WriteSuccess tr' newNodes <- removeMeta tr ("/file" ++ n) "" :: IO (Tree.WriteStatus String)
+        Tree.WriteSuccess tr' newNodes <- removeMetaIO tr ("/file" ++ n) :: IO (Tree.WriteStatus String)
         root_bytes <- return $ runPut $ Tree.serialize tr'
         Store.writeRoot "/tmp/becfs" (Tree.getNodeId tr') root_bytes
         mapM_ writeNode newNodes
@@ -346,6 +346,17 @@ removeMeta tr k = removeNode tr (Tree.Meta k)
 
 removeData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 removeData tr k = removeNode tr (Tree.Data k)
+
+removeNodeIO :: Binary t => Show t => Tree t -> IOTree.Key -> IO (Tree.WriteStatus t)
+removeNodeIO tr k = do
+  nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
+  ioWriteStatusToWriteStatus <$> IOTree.remove fetchIONode (treeToIOTree tr) k nextId
+
+removeMetaIO :: Binary t => Show t => Tree t -> String -> IO (Tree.WriteStatus t)
+removeMetaIO tr k = removeNodeIO tr (IOTree.Meta k)
+
+removeDataIO :: Binary t => Show t => Tree t -> String -> IO (Tree.WriteStatus t)
+removeDataIO tr k = removeNodeIO tr (IOTree.Data k)
 
 lookupNode :: Binary t => Show t => IOTree t -> IOTree.Key -> IO (IOTree.ReadStatus t)
 lookupNode tr k =

@@ -240,6 +240,13 @@ Module IOTree.
     | r => ret r
     end.
 
+  Fixpoint removeNode {t : Set} (fetchNode : NodeId -> IO (IOTree t)) (tr : IOTree t) (k : Key) (nextId : NodeId) : IO (WriteStatus t) :=
+    ret (WriteError "Unimplemented").
+
+  Definition remove {t : Set} (fetchNode : NodeId -> IO (IOTree t)) (tr : IOTree t) (k : Key) (nextId : NodeId) : IO (WriteStatus t) :=
+    match removeNode fetchNode tr k nextId with
+    | status => status
+    end.
 
 
 End IOTree.
