@@ -92,6 +92,10 @@ emptyDirMetadata = do
   now <- getNow
   return $ DirMetadata { mtime = now }
 
+
+keyToIOKey (Tree.Meta x) = IOTree.Meta x
+keyToIOKey (Tree.Data x) = IOTree.Data x
+
 treeToIOTree :: Tree t -> IOTree t
 treeToIOTree tr =
   let fixKey (Tree.Meta x) = IOTree.Meta x
@@ -124,8 +128,8 @@ ioWriteStatusToWriteStatus (IOTree.WriteError err) = Tree.WriteError err
 main :: IO ()
 main = do
   --testStore
-  testBtree
-  --testFs
+  --testBtree
+  testFs
   --fuseMain fsOps exnHandler
 
 extractTreeFromStatus :: Tree.WriteStatus t -> Tree t
@@ -142,6 +146,7 @@ writeNode tr =
 
 testFs :: IO ()
 testFs = do
+  fsInit
   writeToFile "/file1" (B.pack "This is file1") 0
   writeToFile "/dir1/file2" (B.pack "This is file2") 0
   writeToFile "/dir2/dir2/file3" (B.pack "This is file3") 0
@@ -247,6 +252,9 @@ testBtree =
   tree5 <- addNode tree4 "1a"
   readMeta "/file1a"
   readMeta "/file4"
+  tree5a <- removeNode tree5 "2"
+  readMeta "/file2"
+  readMeta "/file4"
   tree6 <- addNode tree5 "6"
   tree7 <- addNode tree6 "8"
   tree8 <- addNode tree7 "7"
@@ -303,28 +311,20 @@ iterateOpUntilSuccess op tr k v =
   writeErr $ "next id is " ++ show nextId
   aux [] [] nextId
 
-insertMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
-insertMeta tr k v =
-  iterateOpUntilSuccess Tree.insert tr (Tree.Meta k) v
-
 insertMetaIO :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertMetaIO tr k v = do
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
   ioWriteStatusToWriteStatus <$> IOTree.insert fetchIONode (treeToIOTree tr) (IOTree.Meta k) v nextId
 
-insertData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
-insertData tr k v =
-  iterateOpUntilSuccess Tree.insert tr (Tree.Data k) v
-
 updateNode :: Binary t => Show t => Tree t -> Tree.Key -> t -> IO (Tree.WriteStatus t)
 updateNode tr k v = do
-  Tree.WriteSuccess rt ns <- iterateOpUntilSuccess (\tr k v ns ids -> Tree.remove tr k ns ids) tr k v
-  tree <- loadRoot "/tmp/becfs"
+  nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
+  Tree.WriteSuccess rt ns <- ioWriteStatusToWriteStatus <$> IOTree.remove fetchIONode (treeToIOTree tr) (keyToIOKey k) nextId
 
   root_bytes <- return $ runPut $ Tree.serialize rt
   Store.writeRoot "/tmp/becfs" (Tree.getNodeId rt) root_bytes
   flip mapM_ ns $ \node -> do
-      bytes <- return $ runPut $ Tree.serialize node
+      bytes <- return $ runPut $ IOTree.serialize node
       writeErr $ "writing node " ++ (show $ Tree.getNodeId node)
       Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
 
@@ -336,16 +336,6 @@ updateMeta tr k v = updateNode tr (Tree.Meta k) v
 
 updateData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 updateData tr k v = updateNode tr (Tree.Data k) v
-
-removeNode :: Binary t => Show t => Tree t -> Tree.Key -> t -> IO (Tree.WriteStatus t)
-removeNode tr k dummy = do
-  iterateOpUntilSuccess (\tr k v ns ids -> Tree.remove tr k ns ids) tr k dummy
-
-removeMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
-removeMeta tr k = removeNode tr (Tree.Meta k)
-
-removeData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
-removeData tr k = removeNode tr (Tree.Data k)
 
 removeNodeIO :: Binary t => Show t => Tree t -> IOTree.Key -> IO (Tree.WriteStatus t)
 removeNodeIO tr k = do
@@ -506,12 +496,12 @@ fileContents path = do
 {- TODO: Delete the data, too -}
 removeFile :: FilePath -> IO ()
 removeFile path = do
-  updateTreeIO (\t -> removeMeta t path (DirMetadata 0) :: IO (Tree.WriteStatus TreeValue))
-  updateTreeIO (\t -> removeData t path (DirMetadata 0) :: IO (Tree.WriteStatus TreeValue))
+  updateTreeIO (\t -> removeMetaIO t path :: IO (Tree.WriteStatus TreeValue))
+  updateTreeIO (\t -> removeDataIO t path :: IO (Tree.WriteStatus TreeValue))
 
 removeDir :: FilePath -> IO ()
 removeDir path = do
-  updateTreeIO (\t -> removeMeta t path (DirMetadata 0):: IO (Tree.WriteStatus TreeValue))
+  updateTreeIO (\t -> removeMetaIO t path :: IO (Tree.WriteStatus TreeValue))
 
 createFileMeta :: FilePath -> IO ()
 createFileMeta path =  do
@@ -767,7 +757,7 @@ fsCreateDirectory :: FilePath -> FileMode -> IO Errno
 fsCreateDirectory path mode =  do
   writeErr $ "Creating directory " ++ show path
   metadata <- emptyDirMetadata
-  updateTreeIO (\t -> insertMeta t path metadata)
+  updateTreeIO (\t -> insertMetaIO t path metadata)
   return eOK
 
 fsCreateSymlink :: FilePath -> FilePath -> IO Errno

@@ -240,12 +240,36 @@ Module IOTree.
     | r => ret r
     end.
 
-  Fixpoint removeNode {t : Set} (fetchNode : NodeId -> IO (IOTree t)) (tr : IOTree t) (k : Key) (nextId : NodeId) : IO (WriteStatus t) :=
-    ret (WriteError "Unimplemented").
+  Fixpoint removeNode {t : Set} (gas : nat) (fetchNode : NodeId -> IO (IOTree t)) (tr : IOTree t) (k : Key) (nextId : NodeId) : IO (WriteStatus t) :=
+    match gas with
+    | O => ret (WriteError "Out of gas")
+    | S gas' =>
+      match tr with
+      | Leaf id vs =>
+          let tr' := Leaf nextId (filter (fun kv' => match kv' with (k', _) => negb (key_beq k k') end) vs) in
+          ret (IWriteSuccess [tr'] [] (nextId + 1))
+      | InternalNode id children =>
+          match findChildId children k with
+          | (pre, (minKey, childId), post) =>
+            fetchNode childId >>= fun child =>
+            removeNode gas' fetchNode child k nextId >>= fun res =>
+            match res with
+            | IWriteSuccess rs ns nextId' =>
+                let newList := (pre ++ map (fun r => (getNodeFirstKey r, getNodeId r)) rs ++ post)%list in
+                ret (IWriteSuccess [InternalNode nextId' newList] (rs ++ ns) (nextId' + 1))
+            | status => ret status
+            end
+          end
+      end
+    end.
+
 
   Definition remove {t : Set} (fetchNode : NodeId -> IO (IOTree t)) (tr : IOTree t) (k : Key) (nextId : NodeId) : IO (WriteStatus t) :=
-    match removeNode fetchNode tr k nextId with
-    | status => status
+    removeNode 99 (* Height of tree *) fetchNode tr k nextId >>= fun res =>
+    match res with
+    | IWriteSuccess [] nodes nextId' => ret (WriteError "No root provided by insertNode")
+    | IWriteSuccess [tr'] nodes nextId' => ret (WriteSuccess tr' nodes)
+    | status => ret status
     end.
 
 
