@@ -1,4 +1,4 @@
-all: BtreeCoq.hs IOBtreeCoq.hs
+all: BepTreeCoq.hs
 
 ListCoq.hs : List.v Util.vo
 	coqc List.v
@@ -15,6 +15,10 @@ BtreeCoq.hs : Btree.v Util.vo
 IOBtreeCoq.hs : Btree.v Util.vo
 	coqc IOBtree.v
 	sed -e '3i import qualified Data.Bits' -e '3i import qualified Data.Char' -e '3i import Debug.Trace (trace)' IOBtreeCoq.hs -i
+
+BepTreeCoq.hs : BepTree.v Util.vo
+	coqc BepTree.v
+	sed -e '3i import qualified Data.Bits' -e '3i import qualified Data.Char' -e '3i import Debug.Trace (trace)' BepTreeCoq.hs -i
 
 Util.vo : Util.v
 	coqc Util.v

@@ -23,10 +23,8 @@ import System.Posix.IO
 
 import System.Fuse
 
-import qualified Tree.Btree as Tree
-import Tree.Btree (Tree)
-import qualified Tree.IOBtree as IOTree
-import Tree.IOBtree (IOTree)
+import qualified Tree.BepTree as Tree
+import Tree.BepTree (Tree)
 import qualified Store.Layered as Store
 
 deriving instance Show Errno
@@ -93,37 +91,36 @@ emptyDirMetadata = do
   return $ DirMetadata { mtime = now }
 
 
-keyToIOKey (Tree.Meta x) = IOTree.Meta x
-keyToIOKey (Tree.Data x) = IOTree.Data x
+keyToIOKey (Tree.Meta x) = Tree.Meta x
+keyToIOKey (Tree.Data x) = Tree.Data x
 
-treeToIOTree :: Tree t -> IOTree t
-treeToIOTree tr =
-  let fixKey (Tree.Meta x) = IOTree.Meta x
-      fixKey (Tree.Data x) = IOTree.Data x
+treeToTree :: Tree t -> Tree t
+treeToTree tr =
+  let fixKey (Tree.Meta x) = Tree.Meta x
+      fixKey (Tree.Data x) = Tree.Data x
       fixKeys = map (\(k, v) -> (fixKey k, v))
   in case tr of
-    Tree.Leaf id vs -> IOTree.Leaf id $ fixKeys vs
-    Tree.InternalNode id vs -> IOTree.InternalNode id $ fixKeys vs
+    Tree.Leaf id vs -> Tree.Leaf id $ fixKeys vs
+    Tree.InternalNode id vs -> Tree.InternalNode id $ fixKeys vs
 
-ioTreeToTree :: IOTree t -> Tree t
+ioTreeToTree :: Tree t -> Tree t
 ioTreeToTree tr =
-  let fixKey (IOTree.Meta x) = Tree.Meta x
-      fixKey (IOTree.Data x) = Tree.Data x
+  let fixKey (Tree.Meta x) = Tree.Meta x
+      fixKey (Tree.Data x) = Tree.Data x
       fixKeys = map (\(k, v) -> (fixKey k, v))
   in case tr of
-    IOTree.Leaf id vs -> Tree.Leaf id $ fixKeys vs
-    IOTree.InternalNode id vs -> Tree.InternalNode id $ fixKeys vs
+    Tree.Leaf id vs -> Tree.Leaf id $ fixKeys vs
+    Tree.InternalNode id vs -> Tree.InternalNode id $ fixKeys vs
 
-ioReadStatusToReadStatus :: IOTree.ReadStatus t -> Tree.ReadStatus t
-ioReadStatusToReadStatus (IOTree.ReadSuccess res) = Tree.ReadSuccess res
-ioReadStatusToReadStatus IOTree.ReadDoesNotExist = Tree.ReadDoesNotExist
-ioReadStatusToReadStatus (IOTree.ReadError err) = Tree.ReadError err
+ioReadStatusToReadStatus :: Tree.ReadStatus t -> Tree.ReadStatus t
+ioReadStatusToReadStatus (Tree.ReadSuccess res) = Tree.ReadSuccess res
+ioReadStatusToReadStatus Tree.ReadDoesNotExist = Tree.ReadDoesNotExist
+ioReadStatusToReadStatus (Tree.ReadError err) = Tree.ReadError err
 
-ioWriteStatusToWriteStatus :: IOTree.WriteStatus t -> Tree.WriteStatus t
-ioWriteStatusToWriteStatus (IOTree.WriteNeedFreshId n) = Tree.WriteNeedFreshId n
-ioWriteStatusToWriteStatus (IOTree.WriteSuccess root nodes) = Tree.WriteSuccess (ioTreeToTree root) (map ioTreeToTree nodes)
-ioWriteStatusToWriteStatus (IOTree.IWriteSuccess roots nodes rootid) = Tree.WriteError "IWriteSuccess escaped"
-ioWriteStatusToWriteStatus (IOTree.WriteError err) = Tree.WriteError err
+ioWriteStatusToWriteStatus :: Tree.WriteStatus t -> Tree.WriteStatus t
+ioWriteStatusToWriteStatus (Tree.WriteSuccess root nodes) = Tree.WriteSuccess (ioTreeToTree root) (map ioTreeToTree nodes)
+ioWriteStatusToWriteStatus (Tree.IWriteSuccess roots nodes rootid) = Tree.WriteError "IWriteSuccess escaped"
+ioWriteStatusToWriteStatus (Tree.WriteError err) = Tree.WriteError err
 
 main :: IO ()
 main = do
@@ -226,13 +223,13 @@ testBtree =
         putStr $ "Tree- " ++ n ++ ": " ++ show tr' ++ " / " ++ show newNodes ++ "\n"
         return tr'
       readMeta k = do
-        root <- fetchIORootNode :: IO (IOTree String)
-        readResult <- IOTree.lookup 99 {- Height of the tree -}  fetchIONode root (IOTree.Meta k)
+        root <- fetchIORootNode :: IO (Tree String)
+        readResult <- Tree.lookup 99 {- Height of the tree -}  fetchIONode root (Tree.Meta k)
 
         case readResult of
-          IOTree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"
-          IOTree.ReadDoesNotExist -> putStr $ "Read " ++ k ++ " DOESNOTEXIST" ++ "\n"
-          IOTree.ReadError str -> putStr $ "Read " ++ k ++ " ERROR: " ++ str ++ "\n"
+          Tree.ReadSuccess v -> putStr $ "Read " ++ k ++ " => " ++ show v ++ "\n"
+          Tree.ReadDoesNotExist -> putStr $ "Read " ++ k ++ " DOESNOTEXIST" ++ "\n"
+          Tree.ReadError str -> putStr $ "Read " ++ k ++ " ERROR: " ++ str ++ "\n"
   in do
   tree <- return Tree.empty
   tree1 <- addNode tree "3"
@@ -298,12 +295,6 @@ iterateOpUntilSuccess op tr k v =
         --putStrLn $ "Adding " ++ show k ++ ": " ++ show attempt
         case attempt of
           Tree.WriteSuccess _ _ -> return attempt
-          Tree.WriteNeedFreshId n -> do
-            aux (freshIds ++ [nextId + i | i <- [0..n-1]]) nodes (nextId + n)
-          Tree.WriteNeedNode id -> do
-            bytes <- Store.readNode "/tmp/becfs" id
-            newNode <- return $ runGet Tree.deserialize bytes
-            aux freshIds (nodes ++ [newNode]) nextId
           Tree.WriteError err -> error $ "Error inserting meta: " ++ err
           other -> error $ "Unexpected WriteStatus: " ++ show other
   in do
@@ -313,29 +304,29 @@ iterateOpUntilSuccess op tr k v =
 
 saveNodes :: Binary t => Tree t -> [Tree t] -> IO ()
 saveNodes rt ns = 
-  saveNodesIO (treeToIOTree rt) (map treeToIOTree ns)
+  saveNodesIO (treeToTree rt) (map treeToTree ns)
 
-saveNodesIO :: Binary t => IOTree t -> [IOTree t] -> IO ()
+saveNodesIO :: Binary t => Tree t -> [Tree t] -> IO ()
 saveNodesIO rt ns = do
-  root_bytes <- return $ runPut $ IOTree.serialize rt
-  Store.writeRoot "/tmp/becfs" (IOTree.getNodeId rt) root_bytes
+  root_bytes <- return $ runPut $ Tree.serialize rt
+  Store.writeRoot "/tmp/becfs" (Tree.getNodeId rt) root_bytes
   flip mapM_ ns $ \node -> do
-      bytes <- return $ runPut $ IOTree.serialize node
-      writeErr $ "writing node " ++ (show $ IOTree.getNodeId node)
-      Store.writeNode "/tmp/becfs" (IOTree.getNodeId node) bytes
+      bytes <- return $ runPut $ Tree.serialize node
+      writeErr $ "writing node " ++ (show $ Tree.getNodeId node)
+      Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
 
 insertMetaIO :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertMetaIO tr k v = do
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
-  ioWriteStatusToWriteStatus <$> IOTree.insert fetchIONode (treeToIOTree tr) (IOTree.Meta k) v nextId
+  ioWriteStatusToWriteStatus <$> Tree.insert fetchIONode (treeToTree tr) (Tree.Meta k) v nextId
 
 updateNode :: Binary t => Show t => Tree t -> Tree.Key -> t -> IO (Tree.WriteStatus t)
 updateNode tr k v = do
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
-  IOTree.WriteSuccess rt ns <- IOTree.remove fetchIONode (treeToIOTree tr) (keyToIOKey k) nextId
+  Tree.WriteSuccess rt ns <- Tree.remove fetchIONode (treeToTree tr) (keyToIOKey k) nextId
   saveNodesIO rt ns
 
-  Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insert rt k v
+  Tree.WriteSuccess rt' ns' <- Tree.insert fetchIONode rt k v nextId
   return $ Tree.WriteSuccess rt' (rt:ns')
 
 updateMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
@@ -344,34 +335,34 @@ updateMeta tr k v = updateNode tr (Tree.Meta k) v
 updateData :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 updateData tr k v = updateNode tr (Tree.Data k) v
 
-removeNodeIO :: Binary t => Show t => Tree t -> IOTree.Key -> IO (Tree.WriteStatus t)
+removeNodeIO :: Binary t => Show t => Tree t -> Tree.Key -> IO (Tree.WriteStatus t)
 removeNodeIO tr k = do
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
-  ioWriteStatusToWriteStatus <$> IOTree.remove fetchIONode (treeToIOTree tr) k nextId
+  ioWriteStatusToWriteStatus <$> Tree.remove fetchIONode (treeToTree tr) k nextId
 
 removeMetaIO :: Binary t => Show t => Tree t -> String -> IO (Tree.WriteStatus t)
-removeMetaIO tr k = removeNodeIO tr (IOTree.Meta k)
+removeMetaIO tr k = removeNodeIO tr (Tree.Meta k)
 
 removeDataIO :: Binary t => Show t => Tree t -> String -> IO (Tree.WriteStatus t)
-removeDataIO tr k = removeNodeIO tr (IOTree.Data k)
+removeDataIO tr k = removeNodeIO tr (Tree.Data k)
 
-lookupNode :: Binary t => Show t => IOTree t -> IOTree.Key -> IO (IOTree.ReadStatus t)
+lookupNode :: Binary t => Show t => Tree t -> Tree.Key -> IO (Tree.ReadStatus t)
 lookupNode tr k =
-  let aux :: Binary t => Show t => IOTree t -> [IOTree t] -> IO (IOTree.ReadStatus t)
+  let aux :: Binary t => Show t => Tree t -> [Tree t] -> IO (Tree.ReadStatus t)
       aux tr nodes = do
-        attempt <- IOTree.lookup 99 fetchIONode tr k
+        attempt <- Tree.lookup 99 fetchIONode tr k
         case attempt of
-          IOTree.ReadSuccess _ -> return attempt
-          IOTree.ReadDoesNotExist -> return attempt
-          IOTree.ReadError str -> error $ "Error reading node: " ++ str
+          Tree.ReadSuccess _ -> return attempt
+          Tree.ReadDoesNotExist -> return attempt
+          Tree.ReadError str -> error $ "Error reading node: " ++ str
   in
   aux tr []
 
 lookupMeta :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
-lookupMeta tr k = ioReadStatusToReadStatus <$> lookupNode (treeToIOTree tr) (IOTree.Meta k)
+lookupMeta tr k = ioReadStatusToReadStatus <$> lookupNode (treeToTree tr) (Tree.Meta k)
 
 lookupData :: Binary t => Show t => Tree t -> String -> IO (Tree.ReadStatus t)
-lookupData tr k = ioReadStatusToReadStatus <$> lookupNode (treeToIOTree tr) (IOTree.Data k)
+lookupData tr k = ioReadStatusToReadStatus <$> lookupNode (treeToTree tr) (Tree.Data k)
 
 childEntries tr k =
   let aux :: Binary t => Show t => Tree t -> IO (Tree.ReadStatus [(Tree.Key, t)])
@@ -381,16 +372,6 @@ childEntries tr k =
           Tree.ReadSuccess _ -> return attempt
           Tree.ReadDoesNotExist -> return attempt
           Tree.ReadError str -> error $ "Error reading node: " ++ str
-          Tree.ReadNeedNode id -> error $ "ChildEntries shouldn't Need a Node"
-          Tree.ReadRepeatOn nodes -> do
-               listOfLists <- flip mapM nodes $ \n -> do
-                    childTr <- fetchNode n
-                    childRes <- aux childTr
-                    case childRes of
-                      Tree.ReadSuccess l -> return l
-                      _ -> error $ "Error reading childEntries: expected Success, got " ++ show childRes
-               lists <- return $ concat listOfLists
-               return $ Tree.ReadSuccess lists
   in
   aux tr
 
@@ -436,20 +417,20 @@ fetchRootNode = do
   root_bytes <- Store.readRoot "/tmp/becfs"
   return $ (runGet Tree.deserialize root_bytes)
 
-fetchIORootNode :: Show t => Binary t => IO (IOTree t)
+fetchIORootNode :: Show t => Binary t => IO (Tree t)
 fetchIORootNode = do
   root_bytes <- Store.readRoot "/tmp/becfs"
-  return $ (runGet IOTree.deserialize root_bytes)
+  return $ (runGet Tree.deserialize root_bytes)
 
 fetchNode :: Show t => Binary t => Int -> IO (Tree t)
 fetchNode n = do
   bytes <- Store.readNode "/tmp/becfs" n
   return $ (runGet Tree.deserialize bytes)
 
-fetchIONode :: Show t => Binary t => Int -> IO (IOTree t)
+fetchIONode :: Show t => Binary t => Int -> IO (Tree t)
 fetchIONode n = do
   bytes <- Store.readNode "/tmp/becfs" n
-  return $ (runGet IOTree.deserialize bytes)
+  return $ (runGet Tree.deserialize bytes)
 
 saveNodeUpdates :: Binary t => Show t => Tree.WriteStatus t -> IO ()
 saveNodeUpdates (Tree.WriteSuccess root nodes) = do
