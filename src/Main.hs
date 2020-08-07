@@ -311,6 +311,19 @@ iterateOpUntilSuccess op tr k v =
   writeErr $ "next id is " ++ show nextId
   aux [] [] nextId
 
+saveNodes :: Binary t => Tree t -> [Tree t] -> IO ()
+saveNodes rt ns = 
+  saveNodesIO (treeToIOTree rt) (map treeToIOTree ns)
+
+saveNodesIO :: Binary t => IOTree t -> [IOTree t] -> IO ()
+saveNodesIO rt ns = do
+  root_bytes <- return $ runPut $ IOTree.serialize rt
+  Store.writeRoot "/tmp/becfs" (IOTree.getNodeId rt) root_bytes
+  flip mapM_ ns $ \node -> do
+      bytes <- return $ runPut $ IOTree.serialize node
+      writeErr $ "writing node " ++ (show $ IOTree.getNodeId node)
+      Store.writeNode "/tmp/becfs" (IOTree.getNodeId node) bytes
+
 insertMetaIO :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 insertMetaIO tr k v = do
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
@@ -319,17 +332,11 @@ insertMetaIO tr k v = do
 updateNode :: Binary t => Show t => Tree t -> Tree.Key -> t -> IO (Tree.WriteStatus t)
 updateNode tr k v = do
   nextId <- Store.nextId "/tmp/becfs" -- RACE CONDITION; need to record that these are allocated.
-  Tree.WriteSuccess rt ns <- ioWriteStatusToWriteStatus <$> IOTree.remove fetchIONode (treeToIOTree tr) (keyToIOKey k) nextId
-
-  root_bytes <- return $ runPut $ Tree.serialize rt
-  Store.writeRoot "/tmp/becfs" (Tree.getNodeId rt) root_bytes
-  flip mapM_ ns $ \node -> do
-      bytes <- return $ runPut $ IOTree.serialize node
-      writeErr $ "writing node " ++ (show $ Tree.getNodeId node)
-      Store.writeNode "/tmp/becfs" (Tree.getNodeId node) bytes
+  IOTree.WriteSuccess rt ns <- IOTree.remove fetchIONode (treeToIOTree tr) (keyToIOKey k) nextId
+  saveNodesIO rt ns
 
   Tree.WriteSuccess rt' ns' <- iterateOpUntilSuccess Tree.insert rt k v
-  return $ Tree.WriteSuccess rt' (rt:ns ++ ns')
+  return $ Tree.WriteSuccess rt' (rt:ns')
 
 updateMeta :: Binary t => Show t => Tree t -> String -> t -> IO (Tree.WriteStatus t)
 updateMeta tr k v = updateNode tr (Tree.Meta k) v
