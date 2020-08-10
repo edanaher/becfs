@@ -33,28 +33,37 @@ Module Tree.
   | Meta : string -> Key
   | Data : string -> Key.
 
-  Definition showKey (k  : Key) : string := match k with
+  Definition showKey (k : Key) : string := match k with
   | Meta s => "Meta " ++ s
   | Data s => "Data " ++ s
   end.
 
+  Definition Children := list (Key * NodeId).
+
+  Inductive JournalEntry (t : Set) : Set := 
+  | Insert : Key -> t -> JournalEntry t
+  | Delete : Key -> JournalEntry t.
+
+  Arguments Insert {t} _ _.
+  Arguments Insert {t} _.
+
+  Definition Journal (t : Set) := list (JournalEntry t).
+
   Inductive Tree (t : Set) : Set :=
-  | InternalNode : NodeId -> list (Key * NodeId) -> Tree t
-  | Leaf : NodeId -> list (Key * t) -> Tree t.
+  | InternalNode : NodeId -> Journal t -> Children -> Tree t
+  | Leaf : NodeId -> Journal t -> list (Key * t) -> Tree t.
 
   Arguments InternalNode {t} _ _.
   Arguments Leaf {t} _.
 
-  Definition empty {t : Set} : Tree t := Leaf 0 [].
+  Definition empty {t : Set} : Tree t := Leaf 0 [] [].
 
 
   Inductive WriteStatus (t : Set) : Set :=
-  | WriteNeedFreshId : nat -> WriteStatus t
   | WriteSuccess : Tree t -> list (Tree t) -> WriteStatus t
   | IWriteSuccess : list (Tree t) -> list (Tree t) -> nat -> WriteStatus t
   | WriteError : string -> WriteStatus t.
 
-  Arguments WriteNeedFreshId {t} _.
   Arguments WriteSuccess {t} _ _.
   Arguments IWriteSuccess {t} _ _ _.
   Arguments WriteError {t} _.
@@ -81,8 +90,8 @@ Module Tree.
 
   Definition getNodeId {t : Set} (node : Tree t) : NodeId :=
     match node with
-    | Leaf id _ => id
-    | InternalNode id _ => id
+    | Leaf id _ _ => id
+    | InternalNode id _ _ => id
     end.
 
   Definition getNodeFirstKey {t : Set} (node : Tree t) : Key :=
@@ -91,8 +100,8 @@ Module Tree.
       | _ => invalidKey "firstkey" (* Impossible? *)
     end in
     match node with
-    | Leaf _ kvs => (firstKey kvs)
-    | InternalNode _ kvs => firstKey kvs
+    | Leaf _ _ kvs => (firstKey kvs)
+    | InternalNode _ _ kvs => firstKey kvs
     end.
 
   Definition option_key_beq (k1 : Key) (k2 : option Key) : bool :=
@@ -152,7 +161,7 @@ Module Tree.
     end.
 
   Fixpoint lookup {t : Set} (gas : nat) (fetchNode : NodeId -> IO (Tree t)) (tr : Tree t) (k : Key) : IO (ReadStatus t) :=
-    ret (ReadError "Unimplemented").
+    ret ReadDoesNotExist.
 
   (*Fixpoint findChildId (children : list (Key * NodeId)) (k : Key) : (list (Key * NodeId)) * (Key * NodeId) * (list (Key * NodeId)) :=
     match children with

@@ -17,15 +17,16 @@ deriving instance Show Comparison
 deriving instance Generic Key
 instance Binary Key
 deriving instance Show a => Show (Tree a)
+deriving instance Show a => Show (JournalEntry a)
 deriving instance Show a => Show (WriteStatus a)
 deriving instance (Show b) => Show (ReadStatus b)
 
 instance Binary a => Binary (Tree a) where
-  put (Leaf id l) = do
+  put (Leaf id _ l) = do
     put False
     put id
     put l
-  put (InternalNode id l) = do
+  put (InternalNode id _ l) = do
     put True
     put id
     put l
@@ -34,10 +35,10 @@ instance Binary a => Binary (Tree a) where
     id <- get
     if isNode then do
       children <- get
-      return $ InternalNode id children
+      return $ InternalNode id [] children
     else do
       values <- get
-      return $ Leaf id values
+      return $ Leaf id [] values
 
 serialize tr = put tr
 deserialize :: Binary a => Get (Tree a)

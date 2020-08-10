@@ -100,8 +100,8 @@ treeToTree tr =
       fixKey (Tree.Data x) = Tree.Data x
       fixKeys = map (\(k, v) -> (fixKey k, v))
   in case tr of
-    Tree.Leaf id vs -> Tree.Leaf id $ fixKeys vs
-    Tree.InternalNode id vs -> Tree.InternalNode id $ fixKeys vs
+    Tree.Leaf id _ vs -> Tree.Leaf id [] $ fixKeys vs
+    Tree.InternalNode id _ vs -> Tree.InternalNode id [] $ fixKeys vs
 
 ioTreeToTree :: Tree t -> Tree t
 ioTreeToTree tr =
@@ -109,8 +109,8 @@ ioTreeToTree tr =
       fixKey (Tree.Data x) = Tree.Data x
       fixKeys = map (\(k, v) -> (fixKey k, v))
   in case tr of
-    Tree.Leaf id vs -> Tree.Leaf id $ fixKeys vs
-    Tree.InternalNode id vs -> Tree.InternalNode id $ fixKeys vs
+    Tree.Leaf id _ vs -> Tree.Leaf id [] $ fixKeys vs
+    Tree.InternalNode id _ vs -> Tree.InternalNode id [] $ fixKeys vs
 
 ioReadStatusToReadStatus :: Tree.ReadStatus t -> Tree.ReadStatus t
 ioReadStatusToReadStatus (Tree.ReadSuccess res) = Tree.ReadSuccess res
@@ -137,44 +137,44 @@ extractTreeFromStatus tr = case tr of
 writeNode :: Binary t => Tree t -> IO ()
 writeNode tr =
   let id = case tr of
-        Tree.Leaf id _ -> id
-        Tree.InternalNode id _ -> id in
+        Tree.Leaf id _ _ -> id
+        Tree.InternalNode id _ _ -> id in
   Store.writeNode "/tmp/becfs" id (runPut $ Tree.serialize tr)
 
 testFs :: IO ()
 testFs = do
   fsInit
   writeToFile "/file1" (B.pack "This is file1") 0
-  writeToFile "/dir1/file2" (B.pack "This is file2") 0
-  writeToFile "/dir2/dir2/file3" (B.pack "This is file3") 0
-  writeToFile "/dir1/file1a" (B.pack "This is file1a") 0
-  writeToFile "/file2b" (B.pack "This is file2b") 0
-  writeToFile "/dir1/file99" (B.pack "This is file99") 0
-  writeToFile "/dir1/file94" (B.pack "This is file94") 0
-  writeToFile "/dir2/dir2/file90" (B.pack "This is file90") 0
-  writeToFile "/dir1/file50" (B.pack "This is file50") 0
-  writeToFile "/dir3/file58" (B.pack "This is file58") 0
-  writeToFile "/dir2/dir2/file54" (B.pack "This is file54") 0
-  writeToFile "/dir3/file55" (B.pack "This is file55") 0
-  printBtreeFromDisk "test finished: "
-  fsOpen "/dir3/file55" ReadOnly defaultFileFlags >>= print
-  fsOpen "/filedoesnotexist" ReadOnly defaultFileFlags >>= print
-  print =<< fsRead  "/dir3/file55" () 100 0
-  print =<< fsRead  "/dir2/dir2/file3" () 100 0
-  print =<< fsRead  "/file3doesnotexist" () 100 0
-  root <- fetchRootNode :: IO (Tree TreeValue)
-  print =<< childEntries root "/dir2/"
-  print =<< childEntries root "/dir2/dir2/"
-  print =<< childEntries root "/dir1/"
+--  writeToFile "/dir1/file2" (B.pack "This is file2") 0
+--  writeToFile "/dir2/dir2/file3" (B.pack "This is file3") 0
+--  writeToFile "/dir1/file1a" (B.pack "This is file1a") 0
+--  writeToFile "/file2b" (B.pack "This is file2b") 0
+--  writeToFile "/dir1/file99" (B.pack "This is file99") 0
+--  writeToFile "/dir1/file94" (B.pack "This is file94") 0
+--  writeToFile "/dir2/dir2/file90" (B.pack "This is file90") 0
+--  writeToFile "/dir1/file50" (B.pack "This is file50") 0
+--  writeToFile "/dir3/file58" (B.pack "This is file58") 0
+--  writeToFile "/dir2/dir2/file54" (B.pack "This is file54") 0
+--  writeToFile "/dir3/file55" (B.pack "This is file55") 0
+--  printBtreeFromDisk "test finished: "
+--  fsOpen "/dir3/file55" ReadOnly defaultFileFlags >>= print
+--  fsOpen "/filedoesnotexist" ReadOnly defaultFileFlags >>= print
+--  print =<< fsRead  "/dir3/file55" () 100 0
+--  print =<< fsRead  "/dir2/dir2/file3" () 100 0
+--  print =<< fsRead  "/file3doesnotexist" () 100 0
+--  root <- fetchRootNode :: IO (Tree TreeValue)
+--  print =<< childEntries root "/dir2/"
+--  print =<< childEntries root "/dir2/dir2/"
+--  print =<< childEntries root "/dir1/"
 
 
 printBtree :: String -> Tree t -> IO ()
 printBtree prefix tr =
   let aux :: String -> Tree t -> IO ()
       aux indent tr = case tr of
-        Tree.Leaf id ns -> do
+        Tree.Leaf id _ ns -> do
           flip mapM_ ns (\(key, _) -> putStr $ indent ++ show key ++ "\n")
-        Tree.InternalNode id ns -> do
+        Tree.InternalNode id _ ns -> do
           flip mapM_ ns (\(minKey, nodeId) -> do
               putStr $ indent ++ show nodeId ++ ": " ++ show minKey ++ "\n"
               bytes <- Store.readNode "/tmp/becfs" nodeId
@@ -188,9 +188,9 @@ showBtree :: String -> IO String
 showBtree prefix =
   let aux :: String -> Tree t -> IO [String]
       aux indent tr = case tr of
-        Tree.Leaf id ns -> do
+        Tree.Leaf id _ ns -> do
           flip mapM ns (\(key, _) -> return $ indent ++ show key ++ "\n")
-        Tree.InternalNode id ns -> do
+        Tree.InternalNode id _ ns -> do
           return . concat =<< flip mapM ns (\(minKey, nodeId) -> do
               bytes <- Store.readNode "/tmp/becfs" nodeId
               tree' <- return $ runGet Tree.deserialize $ bytes :: IO (Tree TreeValue)
@@ -354,7 +354,7 @@ lookupNode tr k =
         case attempt of
           Tree.ReadSuccess _ -> return attempt
           Tree.ReadDoesNotExist -> return attempt
-          Tree.ReadError str -> error $ "Error reading node: " ++ str
+          Tree.ReadError str -> error $ "Error reading node when looking up '" ++ show k ++ "': " ++ str
   in
   aux tr []
 
